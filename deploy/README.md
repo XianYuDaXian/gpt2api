@@ -30,6 +30,7 @@ docker compose logs -f server  # 观察迁移 + 启动日志
 - `mysql_data`:MySQL 物理数据
 - `redis_data`:Redis AOF
 - `backups`:`/app/data/backups` —— 数据库备份文件(.sql.gz)落盘目录
+- `./data/image-cache`:`/app/data/image-cache` —— 图片代理本地缓存目录,首次请求下载一次,后续直接回传
 - `./logs`:宿主机 `deploy/logs` —— server 日志
 
 数据库备份和宿主机数据是两条独立路径:

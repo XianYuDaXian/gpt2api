@@ -84,7 +84,7 @@ services:
     volumes:
       - ../configs:/app/configs:ro
       - backups:/app/data/backups
-      - image_cache:/app/data/image-cache
+      - ./data/image-cache:/app/data/image-cache
       - ./logs:/app/logs
     command: ["/app/gpt2api", "-c", "/app/configs/config.yaml"]
 
@@ -92,4 +92,3 @@ volumes:
   mysql_data:
   redis_data:
   backups:
-  image_cache:
