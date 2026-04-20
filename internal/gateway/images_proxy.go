@@ -159,7 +159,16 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
 		return
 	}
 
-	signedURL, err := cli.ImageDownloadURL(ctx, t.ConversationID, ref)
+	var signedURL string
+	for attempt := 1; attempt <= 3; attempt++ {
+		signedURL, err = cli.ImageDownloadURL(ctx, t.ConversationID, ref)
+		if err == nil {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
 	if err != nil {
 		logger.L().Warn("image proxy download_url",
 			zap.Error(err), zap.String("task_id", taskID), zap.String("ref", ref))
@@ -167,7 +176,17 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
 		return
 	}
 
-	body, ct, err := cli.FetchImage(ctx, signedURL, 16*1024*1024)
+	var body []byte
+	var ct string
+	for attempt := 1; attempt <= 3; attempt++ {
+		body, ct, err = cli.FetchImage(ctx, signedURL, 16*1024*1024)
+		if err == nil {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
 	if err != nil {
 		logger.L().Warn("image proxy fetch",
 			zap.Error(err), zap.String("task_id", taskID))

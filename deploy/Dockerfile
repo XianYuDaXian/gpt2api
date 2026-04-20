@@ -1,15 +1,26 @@
 # syntax=docker/dockerfile:1.6
-#
-# "预构建 + 运行时" 镜像 —— 零外网依赖版本(国内 / 内网环境友好)
-# --------------------------------------------------------------
-# 构建前请先在宿主机生成以下产物(见 deploy/build-local.ps1 / build-local.sh):
-#   deploy/bin/gpt2api           Linux/amd64 可执行
-#   deploy/bin/goose             Linux/amd64 可执行
-#   web/dist/                    前端 Vite 产物
-#
-# 这样容器内除了 alpine 的 apk 装几个小工具,不需要任何外网访问。
-# 在网络通畅的 CI 环境里,你也可以用旧版的两阶段 Dockerfile。
-# --------------------------------------------------------------
+
+FROM golang:1.26-alpine AS backend-builder
+
+WORKDIR /src
+RUN apk add --no-cache git
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o /out/gpt2api ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOBIN=/out CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go install -ldflags "-s -w" github.com/pressly/goose/v3/cmd/goose@v3.20.0
+
+FROM node:22-alpine AS web-builder
+
+WORKDIR /src/web
+COPY web/package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
 
 FROM alpine:3.20
 
@@ -22,13 +33,13 @@ RUN sed -i 's@https\?://dl-cdn.alpinelinux.org@http://mirrors.ustc.edu.cn@g' /et
 
 WORKDIR /app
 
-# 后端 + goose 二进制(宿主交叉编译产物)
-COPY deploy/bin/gpt2api /app/gpt2api
-COPY deploy/bin/goose   /usr/local/bin/goose
+# 后端 + goose 二进制
+COPY --from=backend-builder /out/gpt2api /app/gpt2api
+COPY --from=backend-builder /out/goose   /usr/local/bin/goose
 RUN chmod +x /app/gpt2api /usr/local/bin/goose
 
 # 前端构建产物 —— 被 Go server 以 SPA 方式托管
-COPY web/dist /app/web/dist
+COPY --from=web-builder /src/web/dist /app/web/dist
 
 # Migrations、默认配置、entrypoint
 COPY sql     /app/sql

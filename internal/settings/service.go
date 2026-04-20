@@ -299,7 +299,7 @@ func (s *Service) AccountQuotaProbeIntervalSec() int {
 	return n
 }
 func (s *Service) AccountDefaultClientID() string {
-	return firstNonEmpty(s.GetString(AccountDefaultClientID), "app_EMoamEEZ73f0CkXaXp7hrann")
+	return firstNonEmpty(s.GetString(AccountDefaultClientID), "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh")
 }
 
 // -- billing / recharge --

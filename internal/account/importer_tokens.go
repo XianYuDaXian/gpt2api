@@ -58,7 +58,7 @@ func (s *Service) ImportTokensBatch(ctx context.Context, tokens []string, opts I
 		opts.Mode = ImportModeAT
 	}
 	if opts.DefaultClientID == "" {
-		opts.DefaultClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+		opts.DefaultClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
 	}
 
 	httpc := buildImportHTTPClient(opts.ProxyURL)
@@ -251,7 +251,7 @@ func rtExchange(ctx context.Context, httpc *http.Client, rt, clientID string) (n
 	}
 	buf, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		"https://auth.openai.com/oauth/token", bytes.NewReader(buf))
+		"https://auth0.openai.com/oauth/token", bytes.NewReader(buf))
 	if err != nil {
 		return
 	}

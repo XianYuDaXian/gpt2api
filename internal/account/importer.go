@@ -310,7 +310,7 @@ func (s *Service) ImportBatch(ctx context.Context, items []ImportSource, opt Imp
 		opt.BatchSize = 200
 	}
 	if opt.DefaultClientID == "" {
-		opt.DefaultClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+		opt.DefaultClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
 	}
 
 	// email 去重(后者覆盖)

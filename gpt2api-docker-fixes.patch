@@ -1,0 +1,449 @@
+diff --git a/deploy/Dockerfile b/deploy/Dockerfile
+index 6bb8e0d..2ba8025 100644
+--- a/deploy/Dockerfile
++++ b/deploy/Dockerfile
+@@ -1,15 +1,26 @@
+ # syntax=docker/dockerfile:1.6
+-#
+-# "预构建 + 运行时" 镜像 —— 零外网依赖版本(国内 / 内网环境友好)
+-# --------------------------------------------------------------
+-# 构建前请先在宿主机生成以下产物(见 deploy/build-local.ps1 / build-local.sh):
+-#   deploy/bin/gpt2api           Linux/amd64 可执行
+-#   deploy/bin/goose             Linux/amd64 可执行
+-#   web/dist/                    前端 Vite 产物
+-#
+-# 这样容器内除了 alpine 的 apk 装几个小工具,不需要任何外网访问。
+-# 在网络通畅的 CI 环境里,你也可以用旧版的两阶段 Dockerfile。
+-# --------------------------------------------------------------
++
++FROM golang:1.26-alpine AS backend-builder
++
++WORKDIR /src
++RUN apk add --no-cache git
++COPY go.mod go.sum ./
++RUN --mount=type=cache,target=/go/pkg/mod go mod download
++COPY . .
++RUN --mount=type=cache,target=/go/pkg/mod \
++    --mount=type=cache,target=/root/.cache/go-build \
++    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w" -o /out/gpt2api ./cmd/server
++RUN --mount=type=cache,target=/go/pkg/mod \
++    --mount=type=cache,target=/root/.cache/go-build \
++    GOBIN=/out CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go install -ldflags "-s -w" github.com/pressly/goose/v3/cmd/goose@v3.20.0
++
++FROM node:22-alpine AS web-builder
++
++WORKDIR /src/web
++COPY web/package*.json ./
++RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
++COPY web/ ./
++RUN npm run build
+ 
+ FROM alpine:3.20
+ 
+@@ -22,13 +33,13 @@ RUN sed -i 's@https\?://dl-cdn.alpinelinux.org@http://mirrors.ustc.edu.cn@g' /et
+ 
+ WORKDIR /app
+ 
+-# 后端 + goose 二进制(宿主交叉编译产物)
+-COPY deploy/bin/gpt2api /app/gpt2api
+-COPY deploy/bin/goose   /usr/local/bin/goose
++# 后端 + goose 二进制
++COPY --from=backend-builder /out/gpt2api /app/gpt2api
++COPY --from=backend-builder /out/goose   /usr/local/bin/goose
+ RUN chmod +x /app/gpt2api /usr/local/bin/goose
+ 
+ # 前端构建产物 —— 被 Go server 以 SPA 方式托管
+-COPY web/dist /app/web/dist
++COPY --from=web-builder /src/web/dist /app/web/dist
+ 
+ # Migrations、默认配置、entrypoint
+ COPY sql     /app/sql
+diff --git a/internal/account/importer.go b/internal/account/importer.go
+index ff72a80..79e2ead 100644
+--- a/internal/account/importer.go
++++ b/internal/account/importer.go
+@@ -310,7 +310,7 @@ func (s *Service) ImportBatch(ctx context.Context, items []ImportSource, opt Imp
+ 		opt.BatchSize = 200
+ 	}
+ 	if opt.DefaultClientID == "" {
+-		opt.DefaultClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
++		opt.DefaultClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
+ 	}
+ 
+ 	// email 去重(后者覆盖)
+diff --git a/internal/account/importer_tokens.go b/internal/account/importer_tokens.go
+index 02366ae..fd9bf9e 100644
+--- a/internal/account/importer_tokens.go
++++ b/internal/account/importer_tokens.go
+@@ -58,7 +58,7 @@ func (s *Service) ImportTokensBatch(ctx context.Context, tokens []string, opts I
+ 		opts.Mode = ImportModeAT
+ 	}
+ 	if opts.DefaultClientID == "" {
+-		opts.DefaultClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
++		opts.DefaultClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
+ 	}
+ 
+ 	httpc := buildImportHTTPClient(opts.ProxyURL)
+@@ -251,7 +251,7 @@ func rtExchange(ctx context.Context, httpc *http.Client, rt, clientID string) (n
+ 	}
+ 	buf, _ := json.Marshal(body)
+ 	req, err := http.NewRequestWithContext(ctx, "POST",
+-		"https://auth.openai.com/oauth/token", bytes.NewReader(buf))
++		"https://auth0.openai.com/oauth/token", bytes.NewReader(buf))
+ 	if err != nil {
+ 		return
+ 	}
+diff --git a/internal/account/refresher.go b/internal/account/refresher.go
+index 2b93c5d..5a6159f 100644
+--- a/internal/account/refresher.go
++++ b/internal/account/refresher.go
+@@ -354,7 +354,7 @@ func (r *Refresher) applyRefresh(
+ 	return res, nil
+ }
+ 
+-// rtToAT POST https://auth.openai.com/oauth/token
++// rtToAT POST https://auth0.openai.com/oauth/token
+ func (r *Refresher) rtToAT(ctx context.Context, accountID uint64, refreshToken, clientID string) (newAT, newRT string, expAt time.Time, err error) {
+ 	body := map[string]string{
+ 		"client_id":     clientID,
+@@ -364,7 +364,7 @@ func (r *Refresher) rtToAT(ctx context.Context, accountID uint64, refreshToken,
+ 	}
+ 	buf, _ := json.Marshal(body)
+ 	req, err := http.NewRequestWithContext(ctx, "POST",
+-		"https://auth.openai.com/oauth/token", bytes.NewReader(buf))
++		"https://auth0.openai.com/oauth/token", bytes.NewReader(buf))
+ 	if err != nil {
+ 		return
+ 	}
+diff --git a/internal/account/service.go b/internal/account/service.go
+index bb47b04..f706da8 100644
+--- a/internal/account/service.go
++++ b/internal/account/service.go
+@@ -92,7 +92,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error)
+ 		in.DailyImageQuota = 100
+ 	}
+ 	if in.ClientID == "" {
+-		in.ClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
++		in.ClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
+ 	}
+ 	if in.AccountType == "" {
+ 		in.AccountType = "codex"
+diff --git a/internal/gateway/images_proxy.go b/internal/gateway/images_proxy.go
+index a7a6453..e7c4d1d 100644
+--- a/internal/gateway/images_proxy.go
++++ b/internal/gateway/images_proxy.go
+@@ -159,7 +159,16 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
+ 		return
+ 	}
+ 
+-	signedURL, err := cli.ImageDownloadURL(ctx, t.ConversationID, ref)
++	var signedURL string
++	for attempt := 1; attempt <= 3; attempt++ {
++		signedURL, err = cli.ImageDownloadURL(ctx, t.ConversationID, ref)
++		if err == nil {
++			break
++		}
++		if attempt < 3 {
++			time.Sleep(time.Duration(attempt) * time.Second)
++		}
++	}
+ 	if err != nil {
+ 		logger.L().Warn("image proxy download_url",
+ 			zap.Error(err), zap.String("task_id", taskID), zap.String("ref", ref))
+@@ -167,7 +176,17 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
+ 		return
+ 	}
+ 
+-	body, ct, err := cli.FetchImage(ctx, signedURL, 16*1024*1024)
++	var body []byte
++	var ct string
++	for attempt := 1; attempt <= 3; attempt++ {
++		body, ct, err = cli.FetchImage(ctx, signedURL, 16*1024*1024)
++		if err == nil {
++			break
++		}
++		if attempt < 3 {
++			time.Sleep(time.Duration(attempt) * time.Second)
++		}
++	}
+ 	if err != nil {
+ 		logger.L().Warn("image proxy fetch",
+ 			zap.Error(err), zap.String("task_id", taskID))
+diff --git a/internal/settings/model.go b/internal/settings/model.go
+index a998edc..36b8f2b 100644
+--- a/internal/settings/model.go
++++ b/internal/settings/model.go
+@@ -146,7 +146,7 @@ var Defs = []KeyDef{
+ 	{Key: AccountRefreshConcurrency, Type: "int", Category: "gateway", Default: "4", Label: "账号刷新并发", Desc: "同时刷新的账号数(1~32)"},
+ 	{Key: AccountQuotaProbeEnabled, Type: "bool", Category: "gateway", Default: "true", Label: "账号额度自动探测", Desc: "后台定期查询账号的图片剩余额度"},
+ 	{Key: AccountQuotaProbeIntervalSec, Type: "int", Category: "gateway", Default: "900", Label: "额度探测最小间隔(秒)", Desc: "同一账号两次探测之间的最小间隔,避免过度请求"},
+-	{Key: AccountDefaultClientID, Type: "string", Category: "gateway", Default: "app_EMoamEEZ73f0CkXaXp7hrann", Label: "导入账号默认 client_id", Desc: "JSON 未指定时使用的 OAuth client_id"},
++	{Key: AccountDefaultClientID, Type: "string", Category: "gateway", Default: "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh", Label: "导入账号默认 client_id", Desc: "JSON 未指定时使用的 OAuth client_id"},
+ 
+ 	// ---------- 计费与充值 ----------
+ 	{Key: BillingCreditPerCNY, Type: "int", Category: "billing", Default: "10000", Label: "1 元 = N 积分·厘", Desc: "展示用换算;默认 10000"},
+diff --git a/internal/settings/service.go b/internal/settings/service.go
+index 7ac7582..6658d69 100644
+--- a/internal/settings/service.go
++++ b/internal/settings/service.go
+@@ -299,7 +299,7 @@ func (s *Service) AccountQuotaProbeIntervalSec() int {
+ 	return n
+ }
+ func (s *Service) AccountDefaultClientID() string {
+-	return firstNonEmpty(s.GetString(AccountDefaultClientID), "app_EMoamEEZ73f0CkXaXp7hrann")
++	return firstNonEmpty(s.GetString(AccountDefaultClientID), "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh")
+ }
+ 
+ // -- billing / recharge --
+diff --git a/sql/migrations/20260418000005_accounts_expand.sql b/sql/migrations/20260418000005_accounts_expand.sql
+index 7c553cd..99e1498 100644
+--- a/sql/migrations/20260418000005_accounts_expand.sql
++++ b/sql/migrations/20260418000005_accounts_expand.sql
+@@ -14,7 +14,7 @@
+ 
+ ALTER TABLE `oai_accounts`
+     ADD COLUMN `session_token_enc`      TEXT         NULL                                    AFTER `refresh_token_enc`,
+-    ADD COLUMN `client_id`               VARCHAR(64)  NOT NULL DEFAULT 'app_EMoamEEZ73f0CkXaXp7hrann' AFTER `oai_device_id`,
++    ADD COLUMN `client_id`               VARCHAR(64)  NOT NULL DEFAULT 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh' AFTER `oai_device_id`,
+     ADD COLUMN `chatgpt_account_id`      VARCHAR(64)  NOT NULL DEFAULT ''                     AFTER `client_id`,
+     ADD COLUMN `account_type`            VARCHAR(32)  NOT NULL DEFAULT 'codex'                AFTER `chatgpt_account_id`,
+     ADD COLUMN `last_refresh_at`         DATETIME     NULL                                    AFTER `today_used_date`,
+@@ -37,7 +37,7 @@ INSERT INTO `system_settings` (`k`, `v`, `description`) VALUES
+     ('account.refresh_concurrency',      '4',                                    '同时刷新的账号数(1~32)'),
+     ('account.quota_probe_enabled',      'true',                                 '账号图片额度自动探测总开关'),
+     ('account.quota_probe_interval_sec', '900',                                  '额度探测最小间隔(秒)'),
+-    ('account.default_client_id',        'app_EMoamEEZ73f0CkXaXp7hrann',         '导入账号时未指定 client_id 则使用此值')
++    ('account.default_client_id',        'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',     '导入账号时未指定 client_id 则使用此值')
+ ON DUPLICATE KEY UPDATE `k` = VALUES(`k`);
+ 
+ -- +goose StatementEnd
+diff --git a/web/src/views/admin/Accounts.vue b/web/src/views/admin/Accounts.vue
+index d1df9a0..de585fc 100644
+--- a/web/src/views/admin/Accounts.vue
++++ b/web/src/views/admin/Accounts.vue
+@@ -172,7 +172,7 @@ const formDefault = {
+   token_expires_at: '',
+   oai_session_id: '',
+   oai_device_id: '',
+-  client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
++  client_id: 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',
+   chatgpt_account_id: '',
+   account_type: 'codex',
+   plan_type: 'plus',
+@@ -183,10 +183,12 @@ const formDefault = {
+   status: 'healthy',
+ }
+ const form = reactive({ ...formDefault })
++const captureJsonText = ref('')
+ 
+ function openCreate() {
+   isEdit.value = false
+   Object.assign(form, { ...formDefault })
++  captureJsonText.value = ''
+   dlg.value = true
+ }
+ 
+@@ -214,6 +216,7 @@ async function openEdit(row: accountApi.Account) {
+     status: row.status || 'healthy',
+   })
+   dlg.value = true
++  captureJsonText.value = ''
+   // 异步拉取 AT / RT / ST 明文并回填,方便查看/修改
+   secretsLoading.value = true
+   try {
+@@ -228,6 +231,139 @@ async function openEdit(row: accountApi.Account) {
+   }
+ }
+ 
++function decodeJWT(token: string): any | null {
++  const parts = token.split('.')
++  if (parts.length < 2) return null
++  try {
++    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
++    const pad = payload.length % 4
++    if (pad === 2) payload += '=='
++    else if (pad === 3) payload += '='
++    else if (pad !== 0) return null
++    const text = decodeURIComponent(
++      Array.from(atob(payload))
++        .map((c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)
++        .join(''),
++    )
++    return JSON.parse(text)
++  } catch {
++    return null
++  }
++}
++
++function findString(obj: any, keys: string[]): string {
++  if (!obj || typeof obj !== 'object') return ''
++  for (const k of keys) {
++    const v = obj[k]
++    if (typeof v === 'string' && v.trim()) return v.trim()
++  }
++  for (const v of Object.values(obj)) {
++    if (v && typeof v === 'object') {
++      const found = findString(v, keys)
++      if (found) return found
++    }
++  }
++  return ''
++}
++
++function collectValues(obj: any, keys: string[], out: string[] = []): string[] {
++  if (!obj || typeof obj !== 'object') return out
++  for (const [k, v] of Object.entries(obj)) {
++    if (keys.includes(k) && typeof v === 'string' && v.trim()) out.push(v.trim())
++    if (v && typeof v === 'object') collectValues(v, keys, out)
++  }
++  return out
++}
++
++function extractFirstToken(text: string, prefix: string): string {
++  const re = prefix === 'rt'
++    ? /\brt[_a-zA-Z0-9.-]{20,}/
++    : /\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/
++  const m = text.match(re)
++  return m?.[0] || ''
++}
++
++function pickClientID(raw: any, idPayload: any | null, atPayload: any | null, text: string): string {
++  const fromAzp = idPayload?.azp || raw?.azp
++  if (typeof fromAzp === 'string' && fromAzp.trim()) return fromAzp.trim()
++
++  const audiences = [
++    ...(Array.isArray(idPayload?.aud) ? idPayload.aud : []),
++    ...(Array.isArray(raw?.aud) ? raw.aud : []),
++  ].filter((v) => typeof v === 'string') as string[]
++  const preferred = audiences.find((v) => !v.startsWith('app_')) || audiences.find(Boolean)
++  if (preferred) return preferred
++
++  const rawClient = findString(raw, ['client_id'])
++  if (rawClient) return rawClient
++  if (typeof atPayload?.client_id === 'string' && atPayload.client_id.trim()) {
++    return atPayload.client_id.trim()
++  }
++
++  const m = text.match(/\b(?:pdl|app)_[a-zA-Z0-9_-]{16,}\b|\bpdl[a-zA-Z0-9_-]{20,}\b/)
++  return m?.[0] || ''
++}
++
++function applyCaptureJSON() {
++  const text = captureJsonText.value.trim()
++  if (!text) {
++    ElMessage.warning('请先粘贴抓包 JSON')
++    return
++  }
++
++  let raw: any = {}
++  try {
++    raw = JSON.parse(text)
++  } catch {
++    raw = {}
++  }
++
++  const accessToken = findString(raw, ['access_token', 'auth_token']) || extractFirstToken(text, 'at')
++  const refreshToken = findString(raw, ['refresh_token']) || extractFirstToken(text, 'rt')
++  const idToken = findString(raw, ['id_token'])
++  const sessionToken = findString(raw, ['session_token', 'sessionToken', '__Secure-next-auth.session-token'])
++  const idPayload = idToken ? decodeJWT(idToken) : null
++  const atPayload = accessToken ? decodeJWT(accessToken) : null
++  const clientID = pickClientID(raw, idPayload, atPayload, text)
++  const email = findString(raw, ['email'])
++    || atPayload?.email
++    || atPayload?.['https://api.openai.com/profile']?.email
++    || idPayload?.email
++    || ''
++  const userID = findString(raw, ['user_id', 'chatgpt_account_id'])
++    || atPayload?.['https://api.openai.com/auth']?.user_id
++    || idPayload?.['https://api.openai.com/auth']?.user_id
++    || ''
++  const sessionID = findString(raw, ['session_id', 'oai_session_id']) || atPayload?.session_id || idPayload?.sid || ''
++  const deviceID = findString(raw, ['device_id', 'oai_device_id'])
++
++  if (email) form.email = email
++  if (accessToken) form.auth_token = accessToken
++  if (refreshToken) form.refresh_token = refreshToken
++  if (sessionToken) form.session_token = sessionToken
++  if (clientID) form.client_id = clientID
++  if (userID) form.chatgpt_account_id = userID
++  if (sessionID) form.oai_session_id = sessionID
++  if (deviceID) form.oai_device_id = deviceID
++
++  const exp = Number(atPayload?.exp || idPayload?.exp || 0)
++  if (exp > 0) form.token_expires_at = new Date(exp * 1000).toISOString()
++
++  const filled = [
++    email && '邮箱',
++    accessToken && 'AT',
++    refreshToken && 'RT',
++    sessionToken && 'ST',
++    clientID && 'Client ID',
++    userID && 'AccountID',
++  ].filter(Boolean)
++  if (filled.length === 0) {
++    ElMessage.warning('没有解析到可用字段')
++    return
++  }
++  ElMessage.success(`已填入:${filled.join('、')}`)
++}
++
+ async function copyText(text: string, label: string) {
+   if (!text) { ElMessage.info('内容为空'); return }
+   try {
+@@ -430,7 +566,7 @@ const importForm = reactive({
+   text: '',
+   tokens_text: '',
+   update_existing: true,
+-  default_client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
++  default_client_id: 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',
+   default_proxy_id: 0,
+ })
+ const importing = ref(false)
+@@ -452,7 +588,7 @@ function openImport() {
+   importForm.text = ''
+   importForm.tokens_text = ''
+   importForm.update_existing = true
+-  importForm.default_client_id = 'app_EMoamEEZ73f0CkXaXp7hrann'
++  importForm.default_client_id = 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh'
+   importForm.default_proxy_id = 0
+   importResult.value = null
+   importLastErrors.value = []
+@@ -918,6 +1054,21 @@ onMounted(() => {
+     <!-- 新建 / 编辑弹窗 -->
+     <el-dialog v-model="dlg" :title="isEdit ? '编辑账号' : '新建账号'" width="720px" destroy-on-close>
+       <el-form label-width="120px" size="default">
++        <el-form-item label="抓包 JSON">
++          <div class="capture-json-box">
++            <el-input
++              v-model="captureJsonText"
++              type="textarea"
++              :rows="4"
++              placeholder="粘贴包含 refresh_token / access_token / id_token 的抓包 JSON"
++              spellcheck="false"
++            />
++            <div class="capture-json-actions">
++              <el-button size="small" type="primary" @click="applyCaptureJSON">解析并填入</el-button>
++              <el-button size="small" :disabled="!captureJsonText" @click="captureJsonText = ''">清空</el-button>
++            </div>
++          </div>
++        </el-form-item>
+         <el-form-item label="邮箱">
+           <el-input v-model="form.email" placeholder="user@example.com" />
+         </el-form-item>
+@@ -1292,6 +1443,15 @@ onMounted(() => {
+   :deep(.el-textarea) { flex: 1; }
+ }
+ 
++.capture-json-box {
++  width: 100%;
++}
++.capture-json-actions {
++  display: flex;
++  gap: 8px;
++  margin-top: 8px;
++}
++
+ .pager {
+   display: flex; justify-content: flex-end;
+   margin-top: 14px;

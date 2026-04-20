@@ -14,7 +14,7 @@
 
 ALTER TABLE `oai_accounts`
     ADD COLUMN `session_token_enc`      TEXT         NULL                                    AFTER `refresh_token_enc`,
-    ADD COLUMN `client_id`               VARCHAR(64)  NOT NULL DEFAULT 'app_EMoamEEZ73f0CkXaXp7hrann' AFTER `oai_device_id`,
+    ADD COLUMN `client_id`               VARCHAR(64)  NOT NULL DEFAULT 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh' AFTER `oai_device_id`,
     ADD COLUMN `chatgpt_account_id`      VARCHAR(64)  NOT NULL DEFAULT ''                     AFTER `client_id`,
     ADD COLUMN `account_type`            VARCHAR(32)  NOT NULL DEFAULT 'codex'                AFTER `chatgpt_account_id`,
     ADD COLUMN `last_refresh_at`         DATETIME     NULL                                    AFTER `today_used_date`,
@@ -37,7 +37,7 @@ INSERT INTO `system_settings` (`k`, `v`, `description`) VALUES
     ('account.refresh_concurrency',      '4',                                    '同时刷新的账号数(1~32)'),
     ('account.quota_probe_enabled',      'true',                                 '账号图片额度自动探测总开关'),
     ('account.quota_probe_interval_sec', '900',                                  '额度探测最小间隔(秒)'),
-    ('account.default_client_id',        'app_EMoamEEZ73f0CkXaXp7hrann',         '导入账号时未指定 client_id 则使用此值')
+    ('account.default_client_id',        'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',     '导入账号时未指定 client_id 则使用此值')
 ON DUPLICATE KEY UPDATE `k` = VALUES(`k`);
 
 -- +goose StatementEnd

@@ -354,7 +354,7 @@ func (r *Refresher) applyRefresh(
 	return res, nil
 }
 
-// rtToAT POST https://auth.openai.com/oauth/token
+// rtToAT POST https://auth0.openai.com/oauth/token
 func (r *Refresher) rtToAT(ctx context.Context, accountID uint64, refreshToken, clientID string) (newAT, newRT string, expAt time.Time, err error) {
 	body := map[string]string{
 		"client_id":     clientID,
@@ -364,7 +364,7 @@ func (r *Refresher) rtToAT(ctx context.Context, accountID uint64, refreshToken, 
 	}
 	buf, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, "POST",
-		"https://auth.openai.com/oauth/token", bytes.NewReader(buf))
+		"https://auth0.openai.com/oauth/token", bytes.NewReader(buf))
 	if err != nil {
 		return
 	}

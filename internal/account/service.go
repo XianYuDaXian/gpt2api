@@ -92,7 +92,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*Account, error) 
 		in.DailyImageQuota = 100
 	}
 	if in.ClientID == "" {
-		in.ClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+		in.ClientID = "pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh"
 	}
 	if in.AccountType == "" {
 		in.AccountType = "codex"

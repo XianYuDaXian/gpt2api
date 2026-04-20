@@ -172,7 +172,7 @@ const formDefault = {
   token_expires_at: '',
   oai_session_id: '',
   oai_device_id: '',
-  client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+  client_id: 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',
   chatgpt_account_id: '',
   account_type: 'codex',
   plan_type: 'plus',
@@ -183,10 +183,12 @@ const formDefault = {
   status: 'healthy',
 }
 const form = reactive({ ...formDefault })
+const captureJsonText = ref('')
 
 function openCreate() {
   isEdit.value = false
   Object.assign(form, { ...formDefault })
+  captureJsonText.value = ''
   dlg.value = true
 }
 
@@ -214,6 +216,7 @@ async function openEdit(row: accountApi.Account) {
     status: row.status || 'healthy',
   })
   dlg.value = true
+  captureJsonText.value = ''
   // 异步拉取 AT / RT / ST 明文并回填,方便查看/修改
   secretsLoading.value = true
   try {
@@ -226,6 +229,139 @@ async function openEdit(row: accountApi.Account) {
   } finally {
     secretsLoading.value = false
   }
+}
+
+function decodeJWT(token: string): any | null {
+  const parts = token.split('.')
+  if (parts.length < 2) return null
+  try {
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const pad = payload.length % 4
+    if (pad === 2) payload += '=='
+    else if (pad === 3) payload += '='
+    else if (pad !== 0) return null
+    const text = decodeURIComponent(
+      Array.from(atob(payload))
+        .map((c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`)
+        .join(''),
+    )
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+function findString(obj: any, keys: string[]): string {
+  if (!obj || typeof obj !== 'object') return ''
+  for (const k of keys) {
+    const v = obj[k]
+    if (typeof v === 'string' && v.trim()) return v.trim()
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === 'object') {
+      const found = findString(v, keys)
+      if (found) return found
+    }
+  }
+  return ''
+}
+
+function collectValues(obj: any, keys: string[], out: string[] = []): string[] {
+  if (!obj || typeof obj !== 'object') return out
+  for (const [k, v] of Object.entries(obj)) {
+    if (keys.includes(k) && typeof v === 'string' && v.trim()) out.push(v.trim())
+    if (v && typeof v === 'object') collectValues(v, keys, out)
+  }
+  return out
+}
+
+function extractFirstToken(text: string, prefix: string): string {
+  const re = prefix === 'rt'
+    ? /\brt[_a-zA-Z0-9.-]{20,}/
+    : /\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/
+  const m = text.match(re)
+  return m?.[0] || ''
+}
+
+function pickClientID(raw: any, idPayload: any | null, atPayload: any | null, text: string): string {
+  const fromAzp = idPayload?.azp || raw?.azp
+  if (typeof fromAzp === 'string' && fromAzp.trim()) return fromAzp.trim()
+
+  const audiences = [
+    ...(Array.isArray(idPayload?.aud) ? idPayload.aud : []),
+    ...(Array.isArray(raw?.aud) ? raw.aud : []),
+  ].filter((v) => typeof v === 'string') as string[]
+  const preferred = audiences.find((v) => !v.startsWith('app_')) || audiences.find(Boolean)
+  if (preferred) return preferred
+
+  const rawClient = findString(raw, ['client_id'])
+  if (rawClient) return rawClient
+  if (typeof atPayload?.client_id === 'string' && atPayload.client_id.trim()) {
+    return atPayload.client_id.trim()
+  }
+
+  const m = text.match(/\b(?:pdl|app)_[a-zA-Z0-9_-]{16,}\b|\bpdl[a-zA-Z0-9_-]{20,}\b/)
+  return m?.[0] || ''
+}
+
+function applyCaptureJSON() {
+  const text = captureJsonText.value.trim()
+  if (!text) {
+    ElMessage.warning('请先粘贴抓包 JSON')
+    return
+  }
+
+  let raw: any = {}
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    raw = {}
+  }
+
+  const accessToken = findString(raw, ['access_token', 'auth_token']) || extractFirstToken(text, 'at')
+  const refreshToken = findString(raw, ['refresh_token']) || extractFirstToken(text, 'rt')
+  const idToken = findString(raw, ['id_token'])
+  const sessionToken = findString(raw, ['session_token', 'sessionToken', '__Secure-next-auth.session-token'])
+  const idPayload = idToken ? decodeJWT(idToken) : null
+  const atPayload = accessToken ? decodeJWT(accessToken) : null
+  const clientID = pickClientID(raw, idPayload, atPayload, text)
+  const email = findString(raw, ['email'])
+    || atPayload?.email
+    || atPayload?.['https://api.openai.com/profile']?.email
+    || idPayload?.email
+    || ''
+  const userID = findString(raw, ['user_id', 'chatgpt_account_id'])
+    || atPayload?.['https://api.openai.com/auth']?.user_id
+    || idPayload?.['https://api.openai.com/auth']?.user_id
+    || ''
+  const sessionID = findString(raw, ['session_id', 'oai_session_id']) || atPayload?.session_id || idPayload?.sid || ''
+  const deviceID = findString(raw, ['device_id', 'oai_device_id'])
+
+  if (email) form.email = email
+  if (accessToken) form.auth_token = accessToken
+  if (refreshToken) form.refresh_token = refreshToken
+  if (sessionToken) form.session_token = sessionToken
+  if (clientID) form.client_id = clientID
+  if (userID) form.chatgpt_account_id = userID
+  if (sessionID) form.oai_session_id = sessionID
+  if (deviceID) form.oai_device_id = deviceID
+
+  const exp = Number(atPayload?.exp || idPayload?.exp || 0)
+  if (exp > 0) form.token_expires_at = new Date(exp * 1000).toISOString()
+
+  const filled = [
+    email && '邮箱',
+    accessToken && 'AT',
+    refreshToken && 'RT',
+    sessionToken && 'ST',
+    clientID && 'Client ID',
+    userID && 'AccountID',
+  ].filter(Boolean)
+  if (filled.length === 0) {
+    ElMessage.warning('没有解析到可用字段')
+    return
+  }
+  ElMessage.success(`已填入:${filled.join('、')}`)
 }
 
 async function copyText(text: string, label: string) {
@@ -430,7 +566,7 @@ const importForm = reactive({
   text: '',
   tokens_text: '',
   update_existing: true,
-  default_client_id: 'app_EMoamEEZ73f0CkXaXp7hrann',
+  default_client_id: 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh',
   default_proxy_id: 0,
 })
 const importing = ref(false)
@@ -452,7 +588,7 @@ function openImport() {
   importForm.text = ''
   importForm.tokens_text = ''
   importForm.update_existing = true
-  importForm.default_client_id = 'app_EMoamEEZ73f0CkXaXp7hrann'
+  importForm.default_client_id = 'pdlLIX2Y72MIl2rhLhTE9VV9bN905kBh'
   importForm.default_proxy_id = 0
   importResult.value = null
   importLastErrors.value = []
@@ -918,6 +1054,21 @@ onMounted(() => {
     <!-- 新建 / 编辑弹窗 -->
     <el-dialog v-model="dlg" :title="isEdit ? '编辑账号' : '新建账号'" width="720px" destroy-on-close>
       <el-form label-width="120px" size="default">
+        <el-form-item label="抓包 JSON">
+          <div class="capture-json-box">
+            <el-input
+              v-model="captureJsonText"
+              type="textarea"
+              :rows="4"
+              placeholder="粘贴包含 refresh_token / access_token / id_token 的抓包 JSON"
+              spellcheck="false"
+            />
+            <div class="capture-json-actions">
+              <el-button size="small" type="primary" @click="applyCaptureJSON">解析并填入</el-button>
+              <el-button size="small" :disabled="!captureJsonText" @click="captureJsonText = ''">清空</el-button>
+            </div>
+          </div>
+        </el-form-item>
         <el-form-item label="邮箱">
           <el-input v-model="form.email" placeholder="user@example.com" />
         </el-form-item>
@@ -1290,6 +1441,15 @@ onMounted(() => {
 .token-field {
   display: flex; align-items: flex-start; gap: 8px; width: 100%;
   :deep(.el-textarea) { flex: 1; }
+}
+
+.capture-json-box {
+  width: 100%;
+}
+.capture-json-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .pager {
