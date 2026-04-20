@@ -47,16 +47,17 @@ type RunOptions struct {
 	ModelID           uint64
 	UpstreamModel     string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
 	Prompt            string
-	N                 int                // 目前上游单次返回固定,N 仅用于计费
-	MaxAttempts       int                // 灰度未命中时最大重试,默认 2
-	PerAttemptTimeout time.Duration      // 单次尝试总超时,默认 5min
-	PollMaxWait       time.Duration      // 轮询最长等待,默认 300s
-	References        []ReferenceImage   // 图生图/编辑:参考图
+	N                 int              // 目前上游单次返回固定,N 仅用于计费
+	MaxAttempts       int              // 灰度未命中时最大重试,默认 2
+	PerAttemptTimeout time.Duration    // 单次尝试总超时,默认 5min
+	PollMaxWait       time.Duration    // 轮询最长等待,默认 300s
+	References        []ReferenceImage // 图生图/编辑:参考图
+	AcceptPreview     bool             // 已拿到预览图时立即返回,避免同步请求继续等待 IMG2
 }
 
 // RunResult 是单次生图的输出。
 type RunResult struct {
-	Status         string   // success / failed
+	Status         string // success / failed
 	ConversationID string
 	AccountID      uint64
 	FileIDs        []string // chatgpt.com 侧的原始 ref("sed:" 前缀表示 sediment)
@@ -64,9 +65,9 @@ type RunResult struct {
 	ContentTypes   []string
 	ErrorCode      string
 	ErrorMessage   string
-	Attempts       int   // 跨账号尝试次数(runOnce 次数)
-	TurnsInConv    int   // 当前账号内同会话 picture_v2 轮次
-	IsPreview      bool  // true=返回的是 IMG1 sediment 预览(3 轮均未命中 IMG2 灰度,已尽力)
+	Attempts       int  // 跨账号尝试次数(runOnce 次数)
+	TurnsInConv    int  // 当前账号内同会话 picture_v2 轮次
+	IsPreview      bool // true=返回的是 IMG1 sediment 预览(3 轮均未命中 IMG2 灰度,已尽力)
 	DurationMs     int64
 }
 
@@ -417,6 +418,24 @@ loop:
 			// 保留最新一轮的预览结果(3 轮都 preview 时作为 IMG1 兜底)
 			lastPreviewFids = fids
 			lastPreviewSids = sids
+			if opt.AcceptPreview && (len(fids) > 0 || len(sids) > 0) {
+				result.IsPreview = true
+				fileRefs = append(fileRefs, fids...)
+				for _, s := range sids {
+					fileRefs = append(fileRefs, "sed:"+s)
+				}
+				logger.L().Info("image runner return preview immediately",
+					zap.String("task_id", opt.TaskID),
+					zap.Uint64("account_id", lease.Account.ID),
+					zap.String("conv_id", convID),
+					zap.Int("turn", turn),
+					zap.Int("preview_fids", len(fids)),
+					zap.Strings("preview_fids_list", fids),
+					zap.Int("preview_sids", len(sids)),
+					zap.Strings("preview_sids_list", sids),
+				)
+				break loop
+			}
 			logger.L().Info("image runner preview_only, retry in same conversation",
 				zap.String("task_id", opt.TaskID),
 				zap.Uint64("account_id", lease.Account.ID),

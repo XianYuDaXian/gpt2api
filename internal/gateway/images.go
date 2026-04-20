@@ -258,6 +258,7 @@ func (h *ImagesHandler) ImageGenerations(c *gin.Context) {
 		N:             req.N,
 		MaxAttempts:   maxAttempts,
 		References:    refs,
+		AcceptPreview: true,
 	})
 	rec.AccountID = res.AccountID
 
@@ -351,14 +352,14 @@ func (h *ImagesHandler) ImageTask(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"task_id":          t.TaskID,
-		"status":           t.Status,
-		"conversation_id":  t.ConversationID,
-		"created":          t.CreatedAt.Unix(),
-		"finished_at":      nullableUnix(t.FinishedAt),
-		"error":            t.Error,
-		"credit_cost":      t.CreditCost,
-		"data":             data,
+		"task_id":         t.TaskID,
+		"status":          t.Status,
+		"conversation_id": t.ConversationID,
+		"created":         t.CreatedAt.Unix(),
+		"finished_at":     nullableUnix(t.FinishedAt),
+		"error":           t.Error,
+		"credit_cost":     t.CreditCost,
+		"data":            data,
 	})
 }
 
@@ -460,6 +461,7 @@ func (h *ImagesHandler) handleChatAsImage(c *gin.Context, rec *usage.Log, ak *ap
 		Prompt:        maybeAppendClaritySuffix(prompt),
 		N:             1,
 		MaxAttempts:   2,
+		AcceptPreview: true,
 	})
 	rec.AccountID = res.AccountID
 
@@ -778,6 +780,7 @@ func (h *ImagesHandler) ImageEdits(c *gin.Context) {
 		N:             n,
 		MaxAttempts:   1, // 带参考图时只跑一次,避免重复上传
 		References:    refs,
+		AcceptPreview: true,
 	})
 	rec.AccountID = res.AccountID
 
