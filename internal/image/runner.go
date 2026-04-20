@@ -135,11 +135,14 @@ func (r *Runner) Run(ctx context.Context, opt RunOptions) *RunResult {
 
 	// 落库
 	if r.dao != nil && opt.TaskID != "" {
+		// 请求端可能在生成途中切页或断开连接,最终状态仍必须写入任务表。
+		persistCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 		if result.Status == StatusSuccess {
-			_ = r.dao.MarkSuccess(ctx, opt.TaskID, result.ConversationID,
+			_ = r.dao.MarkSuccess(persistCtx, opt.TaskID, result.ConversationID,
 				result.FileIDs, result.SignedURLs, 0 /* credit_cost 由网关负责写 */)
 		} else {
-			_ = r.dao.MarkFailed(ctx, opt.TaskID, result.ErrorCode)
+			_ = r.dao.MarkFailed(persistCtx, opt.TaskID, result.ErrorCode)
 		}
 	}
 	return result

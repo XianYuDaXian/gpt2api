@@ -287,7 +287,7 @@ func (h *ImagesHandler) ImageGenerations(c *gin.Context) {
 
 	// 8) DAO 回写 credit_cost(Runner 已经 MarkSuccess,这里只补 credit_cost)
 	if h.DAO != nil {
-		_ = h.DAO.UpdateCost(c.Request.Context(), taskID, cost)
+		_ = h.DAO.UpdateCost(context.Background(), taskID, cost)
 	}
 
 	// 9) 响应:URL 统一走自家代理,防止 chatgpt.com estuary/content 防盗链
@@ -477,7 +477,7 @@ func (h *ImagesHandler) handleChatAsImage(c *gin.Context, rec *usage.Log, ak *ap
 	}
 	_ = h.Keys.DAO().TouchUsage(context.Background(), ak.ID, c.ClientIP(), cost)
 	if h.DAO != nil {
-		_ = h.DAO.UpdateCost(c.Request.Context(), taskID, cost)
+		_ = h.DAO.UpdateCost(context.Background(), taskID, cost)
 	}
 
 	rec.Status = usage.StatusSuccess
@@ -800,7 +800,7 @@ func (h *ImagesHandler) ImageEdits(c *gin.Context) {
 	rec.Status = usage.StatusSuccess
 	rec.CreditCost = cost
 	if h.DAO != nil {
-		_ = h.DAO.UpdateCost(c.Request.Context(), taskID, cost)
+		_ = h.DAO.UpdateCost(context.Background(), taskID, cost)
 	}
 
 	out := ImageGenResponse{
