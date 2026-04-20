@@ -4,8 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -55,4 +58,73 @@ func VerifySig(taskID string, idx int, expMs int64, sig string) bool {
 	}
 	want := Sign(taskID, idx, expMs)
 	return hmac.Equal([]byte(sig), []byte(want))
+}
+
+// CachePaths 返回缓存图片和元数据文件路径。
+func CachePaths(cacheDir, taskID string, idx int) (imgPath, metaPath string) {
+	base := filepath.Join(strings.TrimSpace(cacheDir), taskID, fmt.Sprintf("%d", idx))
+	return base + ".bin", base + ".meta.json"
+}
+
+type cacheMeta struct {
+	ContentType string    `json:"content_type"`
+	StoredAt    time.Time `json:"stored_at"`
+}
+
+// LoadCache 从磁盘读取缓存图片。
+func LoadCache(cacheDir, taskID string, idx int) ([]byte, string, bool, error) {
+	imgPath, metaPath := CachePaths(cacheDir, taskID, idx)
+	body, err := os.ReadFile(imgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "", false, nil
+		}
+		return nil, "", false, err
+	}
+	ct := ""
+	if metaBytes, err := os.ReadFile(metaPath); err == nil {
+		var meta cacheMeta
+		if json.Unmarshal(metaBytes, &meta) == nil {
+			ct = meta.ContentType
+		}
+	}
+	if ct == "" {
+		ct = "image/png"
+	}
+	return body, ct, true, nil
+}
+
+// StoreCache 写入磁盘缓存图片。
+func StoreCache(cacheDir, taskID string, idx int, body []byte, contentType string) error {
+	if strings.TrimSpace(cacheDir) == "" || len(body) == 0 {
+		return nil
+	}
+	imgPath, metaPath := CachePaths(cacheDir, taskID, idx)
+	if err := os.MkdirAll(filepath.Dir(imgPath), 0o750); err != nil {
+		return err
+	}
+	tmpImg := imgPath + ".tmp"
+	if err := os.WriteFile(tmpImg, body, 0o640); err != nil {
+		return err
+	}
+	_ = os.Remove(imgPath)
+	if err := os.Rename(tmpImg, imgPath); err != nil {
+		_ = os.Remove(tmpImg)
+		return err
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "image/png"
+	}
+	meta := cacheMeta{ContentType: contentType, StoredAt: time.Now()}
+	metaBytes, _ := json.Marshal(meta)
+	tmpMeta := metaPath + ".tmp"
+	if err := os.WriteFile(tmpMeta, metaBytes, 0o640); err != nil {
+		return err
+	}
+	_ = os.Remove(metaPath)
+	if err := os.Rename(tmpMeta, metaPath); err != nil {
+		_ = os.Remove(tmpMeta)
+		return err
+	}
+	return nil
 }

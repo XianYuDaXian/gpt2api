@@ -44,8 +44,9 @@ type chatMsg = chatgpt.ChatMessage
 //	GET  /v1/images/tasks/:id         查询历史任务(按 task_id)
 type ImagesHandler struct {
 	*Handler
-	Runner *image.Runner
-	DAO    *image.DAO
+	Runner   *image.Runner
+	DAO      *image.DAO
+	CacheDir string
 	// ImageAccResolver 可选:代理下载上游图片时用于解出账号 AT/cookies/proxy。
 	// 未注入时 /p/img 路径会返回 503。
 	ImageAccResolver ImageAccountResolver

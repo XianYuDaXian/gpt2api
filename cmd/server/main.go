@@ -147,6 +147,7 @@ func main() {
 		Handler: gwH,
 		Runner:  imageRunner,
 		DAO:     imageDAO,
+		CacheDir: cfg.ImageCache.Dir,
 	}
 	gwH.Images = imagesH // chat/completions 识别到图像模型时转派
 

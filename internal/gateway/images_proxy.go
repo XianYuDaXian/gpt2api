@@ -23,7 +23,9 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -91,6 +93,17 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
 	if h.DAO == nil {
 		c.AbortWithStatus(http.StatusServiceUnavailable)
 		return
+	}
+
+	if h.CacheDir != "" {
+		if body, ct, ok, err := imageproxy.LoadCache(h.CacheDir, taskID, idx); err == nil && ok {
+			c.Header("Cache-Control", "private, max-age=86400")
+			c.Data(http.StatusOK, ct, body)
+			return
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			logger.L().Warn("image proxy cache read",
+				zap.Error(err), zap.String("task_id", taskID), zap.Int("idx", idx))
+		}
 	}
 
 	t, err := h.DAO.Get(c.Request.Context(), taskID)
@@ -171,6 +184,12 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
 	if ct == "" {
 		ct = "image/png"
 	}
-	c.Header("Cache-Control", "private, max-age=1800")
+	if h.CacheDir != "" {
+		if err := imageproxy.StoreCache(h.CacheDir, taskID, idx, body, ct); err != nil {
+			logger.L().Warn("image proxy cache write",
+				zap.Error(err), zap.String("task_id", taskID), zap.Int("idx", idx))
+		}
+	}
+	c.Header("Cache-Control", "private, max-age=86400")
 	c.Data(http.StatusOK, ct, body)
 }

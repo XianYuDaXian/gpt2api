@@ -67,6 +67,7 @@ services:
       GPT2API_MYSQL_DSN: "${MYSQL_USER:-gpt2api}:${MYSQL_PASSWORD:-gpt2api}@tcp(mysql:3306)/${MYSQL_DATABASE:-gpt2api}?parseTime=true&loc=Local&charset=utf8mb4&collation=utf8mb4_unicode_ci"
       GPT2API_REDIS_ADDR: "redis:6379"
       GPT2API_BACKUP_DIR: /app/data/backups
+      GPT2API_IMAGE_CACHE_DIR: /app/data/image-cache
       GPT2API_BACKUP_RETENTION: ${BACKUP_RETENTION:-30}
       GPT2API_BACKUP_ALLOW_RESTORE: ${BACKUP_ALLOW_RESTORE:-false}
       # 强烈建议在 .env 中覆盖下列两项
@@ -83,6 +84,7 @@ services:
     volumes:
       - ../configs:/app/configs:ro
       - backups:/app/data/backups
+      - image_cache:/app/data/image-cache
       - ./logs:/app/logs
     command: ["/app/gpt2api", "-c", "/app/configs/config.yaml"]
 
@@ -90,3 +92,4 @@ volumes:
   mysql_data:
   redis_data:
   backups:
+  image_cache:

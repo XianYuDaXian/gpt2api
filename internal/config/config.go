@@ -20,6 +20,7 @@ type Config struct {
 	Upstream  UpstreamConfig  `mapstructure:"upstream"`
 	EPay      EPayConfig      `mapstructure:"epay"`
 	Backup    BackupConfig    `mapstructure:"backup"`
+	ImageCache ImageCacheConfig `mapstructure:"image_cache"`
 	SMTP      SMTPConfig      `mapstructure:"smtp"`
 }
 
@@ -88,6 +89,10 @@ type BackupConfig struct {
 	MysqlBin      string `mapstructure:"mysql_bin"`      // 恢复用,默认 mysql
 	MaxUploadMB   int    `mapstructure:"max_upload_mb"`  // 上传 .sql.gz 上限,默认 512
 	AllowRestore  bool   `mapstructure:"allow_restore"`  // 是否允许 /restore 端点(生产强烈建议 false 手动切)
+}
+
+type ImageCacheConfig struct {
+	Dir string `mapstructure:"dir"` // 图片代理缓存目录,默认 ./data/image-cache
 }
 
 type EPayConfig struct {
