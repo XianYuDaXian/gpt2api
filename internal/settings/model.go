@@ -101,7 +101,7 @@ var Defs = []KeyDef{
 	{Key: SiteFooter, Type: "string", Category: "site", Default: "", Label: "页脚文案", Desc: "版权/备案号等(纯文本)", Public: true},
 	{Key: SiteContactEmail, Type: "email", Category: "site", Default: "", Label: "联系邮箱", Desc: "对外展示的客服邮箱", Public: true},
 	{Key: SiteDocsURL, Type: "url", Category: "site", Default: "", Label: "文档链接", Desc: "留空则前端隐藏「文档」入口", Public: true},
-	{Key: SiteAPIBaseURL, Type: "url", Category: "site", Default: "", Label: "API Base URL", Desc: "展示给用户的 /v1 入口;留空=当前站点地址", Public: true},
+	{Key: SiteAPIBaseURL, Type: "url", Category: "site", Default: "", Label: "外部访问 URL", Desc: "对外可访问的站点基准地址,用于生成图片/文件链接;留空=当前站点地址", Public: true},
 	{Key: UIDefaultPageSize, Type: "int", Category: "site", Default: "20", Label: "默认每页条数", Desc: "后台表格默认分页(5~100)"},
 
 	// ---------- 安全与认证 ----------

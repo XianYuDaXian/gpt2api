@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/432539/gpt2api/internal/imageproxy"
+	"github.com/432539/gpt2api/internal/settings"
 	"github.com/432539/gpt2api/internal/middleware"
 	"github.com/432539/gpt2api/pkg/resp"
 )
@@ -15,10 +17,15 @@ import (
 // MeHandler 面向当前用户的图片任务只读接口(JWT 鉴权)。
 // 与 /v1/images/tasks/:id(API Key 鉴权)共享同一张 image_tasks 表,
 // 只是入口改到 /api/me/images/* 便于前端面板调用。
-type MeHandler struct{ dao *DAO }
+type MeHandler struct {
+	dao      *DAO
+	settings *settings.Service
+}
 
 // NewMeHandler 构造。
-func NewMeHandler(dao *DAO) *MeHandler { return &MeHandler{dao: dao} }
+func NewMeHandler(dao *DAO, settingsSvc *settings.Service) *MeHandler {
+	return &MeHandler{dao: dao, settings: settingsSvc}
+}
 
 // taskView 是对外返回的视图结构,解码 JSON 列 + 隐藏内部字段。
 type taskView struct {
@@ -41,8 +48,23 @@ type taskView struct {
 	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
 
-func toView(t *Task) taskView {
-	urls := t.DecodeResultURLs()
+func (h *MeHandler) proxyURL(taskID string, idx int) string {
+	if h == nil || h.settings == nil {
+		return imageproxy.BuildURL("", taskID, idx, imageproxy.ImageProxyTTL)
+	}
+	return h.settings.PublicBaseURL(imageproxy.BuildURL("", taskID, idx, imageproxy.ImageProxyTTL))
+}
+
+func (h *MeHandler) viewOf(t *Task) taskView {
+	raw := t.DecodeResultURLs()
+	count := len(raw)
+	if n := len(t.DecodeFileIDs()); n > count {
+		count = n
+	}
+	urls := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		urls = append(urls, h.proxyURL(t.TaskID, i))
+	}
 	fids := t.DecodeFileIDs()
 	for i, id := range fids {
 		fids[i] = strings.TrimPrefix(id, "sed:")
@@ -82,7 +104,7 @@ func (h *MeHandler) List(c *gin.Context) {
 	}
 	items := make([]taskView, 0, len(tasks))
 	for i := range tasks {
-		items = append(items, toView(&tasks[i]))
+		items = append(items, h.viewOf(&tasks[i]))
 	}
 	resp.OK(c, gin.H{"items": items, "limit": limit, "offset": offset})
 }
@@ -112,5 +134,5 @@ func (h *MeHandler) Get(c *gin.Context) {
 		resp.Fail(c, 40400, "task not found")
 		return
 	}
-	resp.OK(c, toView(t))
+	resp.OK(c, h.viewOf(t))
 }

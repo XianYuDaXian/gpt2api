@@ -23,11 +23,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -35,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"github.com/432539/gpt2api/internal/imageproxy"
 	"github.com/432539/gpt2api/internal/upstream/chatgpt"
 	"github.com/432539/gpt2api/pkg/logger"
 )
@@ -46,46 +42,25 @@ type ImageAccountResolver interface {
 	ProxyURL(ctx context.Context, accountID uint64) string
 }
 
-// imageProxySecret 进程级随机密钥,用于 HMAC 签名图片 URL。
-// 进程重启后旧的签名 URL 全部失效,这是故意的(防止长期有效的 URL 泄漏)。
-var imageProxySecret []byte
-
-func init() {
-	imageProxySecret = make([]byte, 32)
-	if _, err := rand.Read(imageProxySecret); err != nil {
-		for i := range imageProxySecret {
-			imageProxySecret[i] = byte(i*31 + 7)
-		}
-	}
-}
-
-// ImageProxyTTL 单条签名 URL 的默认有效期(24h,够前端离线展示一段时间)。
-const ImageProxyTTL = 24 * time.Hour
-
 // BuildImageProxyURL 生成代理 URL。返回绝对 path(不含 host),调用方可以直接拼或交给前端同 origin 使用。
 //
 // 默认 ttl=24h。前端展示一张历史图片,最多走一次上游获取 bytes,之后浏览器缓存即可。
 func BuildImageProxyURL(taskID string, idx int, ttl time.Duration) string {
-	if ttl <= 0 {
-		ttl = ImageProxyTTL
-	}
-	expMs := time.Now().Add(ttl).UnixMilli()
-	sig := computeImgSig(taskID, idx, expMs)
-	return fmt.Sprintf("/p/img/%s/%d?exp=%d&sig=%s", taskID, idx, expMs, sig)
+	return BuildImageProxyURLWithBase("", taskID, idx, ttl)
 }
 
-func computeImgSig(taskID string, idx int, expMs int64) string {
-	mac := hmac.New(sha256.New, imageProxySecret)
-	fmt.Fprintf(mac, "%s|%d|%d", taskID, idx, expMs)
-	return hex.EncodeToString(mac.Sum(nil))[:24]
+// BuildImageProxyURLWithBase 生成图片代理 URL。
+// baseURL 为空时返回相对路径;有值时返回绝对地址。
+func BuildImageProxyURLWithBase(baseURL, taskID string, idx int, ttl time.Duration) string {
+	return imageproxy.BuildURL(baseURL, taskID, idx, ttl)
 }
 
-func verifyImgSig(taskID string, idx int, expMs int64, sig string) bool {
-	if expMs < time.Now().UnixMilli() {
-		return false
+func (h *ImagesHandler) imageProxyURL(taskID string, idx int, ttl time.Duration) string {
+	baseURL := ""
+	if h != nil && h.Settings != nil {
+		baseURL = h.Settings.SiteAPIBaseURL()
 	}
-	want := computeImgSig(taskID, idx, expMs)
-	return hmac.Equal([]byte(sig), []byte(want))
+	return BuildImageProxyURLWithBase(baseURL, taskID, idx, ttl)
 }
 
 // ImageProxy 按签名代理下载上游图片。无需 API Key,只靠 URL 签名校验。
@@ -109,7 +84,7 @@ func (h *ImagesHandler) ImageProxy(c *gin.Context) {
 		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
-	if !verifyImgSig(taskID, idx, expMs, sig) {
+	if !imageproxy.VerifySig(taskID, idx, expMs, sig) {
 		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}

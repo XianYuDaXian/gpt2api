@@ -171,7 +171,6 @@ func main() {
 	usageQDAO := usage.NewQueryDAO(sqldb)
 	adminUsageH := usage.NewAdminHandler(usageQDAO)
 	meUsageH := usage.NewMeHandler(usageQDAO)
-	meImageH := image.NewMeHandler(imageDAO)
 
 	mailSvc := mailer.New(mailer.Config{
 		Host:     cfg.SMTP.Host,
@@ -220,6 +219,8 @@ func main() {
 	rechargeSvc.SetSettings(settingsSvc)
 	rechargeH := recharge.NewHandler(rechargeSvc)
 	adminRechargeH := recharge.NewAdminHandler(rechargeSvc, authSvc)
+
+	meImageH := image.NewMeHandler(imageDAO, settingsSvc)
 
 	// 代理池健康探测器:由 settings 提供热更参数,注入到 Handler
 	proxyH := proxy.NewHandler(proxySvc)

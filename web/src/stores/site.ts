@@ -55,10 +55,13 @@ export const useSiteStore = defineStore('site', () => {
     const v = info.value[key]
     return v == null || v === '' ? fallback : v
   }
+  function apiBaseURL(fallback = window.location.origin): string {
+    return get('site.api_base_url', fallback)
+  }
   function allowRegister(): boolean {
     const v = (info.value['auth.allow_register'] || '').toLowerCase()
     return v === 'true' || v === '1' || v === 'yes'
   }
 
-  return { info, loaded, refresh, get, allowRegister }
+  return { info, loaded, refresh, get, apiBaseURL, allowRegister }
 })

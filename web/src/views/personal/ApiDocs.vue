@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useSiteStore } from '@/stores/site'
 import {
   listMyModels,
   listMyUsageLogs,
@@ -13,8 +14,10 @@ import {
 } from '@/api/me'
 import { formatCredit, formatDateTime, formatErrorCode } from '@/utils/format'
 import { ENABLE_CHAT_MODEL } from '@/config/feature'
+import { resolvePublicUrl } from '@/utils/url'
 
 const activeTab = ref<'chat' | 'image'>(ENABLE_CHAT_MODEL ? 'chat' : 'image')
+const site = useSiteStore()
 
 const models = ref<SimpleModel[]>([])
 const chatModels = computed(() => models.value.filter((m) => m.type === 'chat'))
@@ -23,8 +26,8 @@ const imageModels = computed(() => models.value.filter((m) => m.type === 'image'
 const selectedChatModel = ref<string>('')
 const selectedImageModel = ref<string>('')
 
-// 原点:浏览器当前地址,用于 SDK 示例的 base_url
-const origin = computed(() => window.location.origin)
+// 外部访问基准地址:优先使用系统设置,没有配置时回退到当前站点。
+const apiBaseURL = computed(() => site.apiBaseURL())
 
 // ---------- 当前用户汇总 ----------
 const stats = ref<MyStatsResp | null>(null)
@@ -97,7 +100,7 @@ function imageLoadMore() {
 // ---------- SDK 代码示例 ----------
 const chatCurl = computed(() => {
   const model = selectedChatModel.value || 'gpt-5'
-  return `curl ${origin.value}/v1/chat/completions \\
+  return `curl ${apiBaseURL.value}/v1/chat/completions \\
   -H "Authorization: Bearer \${YOUR_API_KEY}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -114,7 +117,7 @@ const chatPython = computed(() => {
   return `from openai import OpenAI
 
 client = OpenAI(
-    base_url="${origin.value}/v1",
+    base_url="${apiBaseURL.value}/v1",
     api_key="\${YOUR_API_KEY}",
 )
 
@@ -129,7 +132,7 @@ for chunk in resp:
 
 const imageCurl = computed(() => {
   const model = selectedImageModel.value || 'gpt-image-2'
-  return `curl ${origin.value}/v1/images/generations \\
+  return `curl ${apiBaseURL.value}/v1/images/generations \\
   -H "Authorization: Bearer \${YOUR_API_KEY}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -145,7 +148,7 @@ const imagePython = computed(() => {
   return `from openai import OpenAI
 
 client = OpenAI(
-    base_url="${origin.value}/v1",
+    base_url="${apiBaseURL.value}/v1",
     api_key="\${YOUR_API_KEY}",
 )
 
@@ -348,7 +351,7 @@ onMounted(async () => {
                 class="img-card"
               >
                 <div class="thumb">
-                  <img v-if="t.image_urls?.[0]" :src="t.image_urls[0]" :alt="t.prompt" />
+                  <img v-if="t.image_urls?.[0]" :src="resolvePublicUrl(t.image_urls[0], apiBaseURL)" :alt="t.prompt" />
                   <div v-else class="thumb-ph">
                     <el-icon :size="32"><PictureRounded /></el-icon>
                     <div class="s">{{ t.status }}</div>

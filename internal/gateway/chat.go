@@ -53,6 +53,7 @@ type Handler struct {
 	Settings interface {
 		GatewayUpstreamTimeoutSec() int
 		GatewaySSEReadTimeoutSec() int
+		SiteAPIBaseURL() string
 	}
 }
 

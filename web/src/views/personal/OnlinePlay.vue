@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
+import { useSiteStore } from '@/stores/site'
 import { formatCredit } from '@/utils/format'
+import { resolvePublicUrl } from '@/utils/url'
 import {
   listMyModels,
   streamPlayChat,
@@ -18,6 +20,7 @@ import { ENABLE_CHAT_MODEL } from '@/config/feature'
 // 用户 / 模型
 // ----------------------------------------------------
 const userStore = useUserStore()
+const siteStore = useSiteStore()
 const { user } = storeToRefs(userStore)
 
 const balance = computed(() => formatCredit(user.value?.credit_balance))
@@ -28,6 +31,7 @@ const imageModels = computed(() => models.value.filter((m) => m.type === 'image'
 
 const selectedChatModel = ref('')
 const selectedImageModel = ref('')
+const apiBaseURL = computed(() => siteStore.apiBaseURL())
 
 const currentChatDesc = computed(
   () => chatModels.value.find((m) => m.slug === selectedChatModel.value)?.description || '',
@@ -325,13 +329,13 @@ const previewVisible = ref(false)
 const previewList = ref<string[]>([])
 const previewIndex = ref(0)
 function openPreview(urls: string[], idx: number) {
-  previewList.value = urls
+  previewList.value = urls.map((u) => resolvePublicUrl(u, apiBaseURL.value))
   previewIndex.value = idx
   previewVisible.value = true
 }
 function downloadUrl(url: string) {
   const a = document.createElement('a')
-  a.href = url
+  a.href = resolvePublicUrl(url, apiBaseURL.value)
   a.target = '_blank'
   a.rel = 'noopener'
   a.download = ''
@@ -762,7 +766,7 @@ watch(activeTab, (v) => {
                   :class="{ 'is-preview': t2iPreview }"
                   @click="openPreview(t2iResult.map((x) => x.url), idx)"
                 >
-                  <img :src="img.url" :alt="`result-${idx}`" loading="lazy" />
+                  <img :src="resolvePublicUrl(img.url, apiBaseURL)" :alt="`result-${idx}`" loading="lazy" />
                   <div v-if="t2iPreview" class="img-badge">IMG1 预览</div>
                   <div class="img-actions" @click.stop>
                     <button class="iact" @click="openPreview(t2iResult.map((x) => x.url), idx)">
@@ -900,7 +904,7 @@ watch(activeTab, (v) => {
                   :class="{ 'is-preview': i2iPreview }"
                   @click="openPreview(i2iResult.map((x) => x.url), idx)"
                 >
-                  <img :src="img.url" :alt="`result-${idx}`" />
+                  <img :src="resolvePublicUrl(img.url, apiBaseURL)" :alt="`result-${idx}`" />
                   <div v-if="i2iPreview" class="img-badge">IMG1 预览</div>
                   <div class="img-actions" @click.stop>
                     <button class="iact" @click="openPreview(i2iResult.map((x) => x.url), idx)">
