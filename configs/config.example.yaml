@@ -53,6 +53,17 @@ upstream:
   request_timeout_sec: 60
   sse_read_timeout_sec: 300
 
+backup:
+  dir: "./data/backups"
+  retention: 30
+  mysqldump_bin: "mysqldump"
+  mysql_bin: "mysql"
+  max_upload_mb: 512
+  allow_restore: false
+
+image_cache:
+  dir: "./data/image-cache"
+
 # 支付(易支付)
 epay:
   gateway_url: ""
