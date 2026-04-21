@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/432539/gpt2api/internal/imageproxy"
-	"github.com/432539/gpt2api/internal/settings"
 	"github.com/432539/gpt2api/internal/middleware"
+	"github.com/432539/gpt2api/internal/settings"
 	"github.com/432539/gpt2api/pkg/resp"
 )
 
@@ -29,21 +29,21 @@ func NewMeHandler(dao *DAO, settingsSvc *settings.Service) *MeHandler {
 
 // taskView 是对外返回的视图结构,解码 JSON 列 + 隐藏内部字段。
 type taskView struct {
-	ID             uint64    `json:"id"`
-	TaskID         string    `json:"task_id"`
-	UserID         uint64    `json:"user_id"`
-	ModelID        uint64    `json:"model_id"`
-	AccountID      uint64    `json:"account_id"`
-	Prompt         string    `json:"prompt"`
-	N              int       `json:"n"`
-	Size           string    `json:"size"`
-	Status         string    `json:"status"`
-	ConversationID string    `json:"conversation_id,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	CreditCost     int64     `json:"credit_cost"`
-	ImageURLs      []string  `json:"image_urls"`
-	FileIDs        []string  `json:"file_ids,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID             uint64     `json:"id"`
+	TaskID         string     `json:"task_id"`
+	UserID         uint64     `json:"user_id"`
+	ModelID        uint64     `json:"model_id"`
+	AccountID      uint64     `json:"account_id"`
+	Prompt         string     `json:"prompt"`
+	N              int        `json:"n"`
+	Size           string     `json:"size"`
+	Status         string     `json:"status"`
+	ConversationID string     `json:"conversation_id,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	CreditCost     int64      `json:"credit_cost"`
+	ImageURLs      []string   `json:"image_urls"`
+	FileIDs        []string   `json:"file_ids,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
 	StartedAt      *time.Time `json:"started_at,omitempty"`
 	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 }
@@ -102,11 +102,16 @@ func (h *MeHandler) List(c *gin.Context) {
 		resp.Internal(c, err.Error())
 		return
 	}
+	total, err := h.dao.CountByUser(c.Request.Context(), uid)
+	if err != nil {
+		resp.Internal(c, err.Error())
+		return
+	}
 	items := make([]taskView, 0, len(tasks))
 	for i := range tasks {
 		items = append(items, h.viewOf(&tasks[i]))
 	}
-	resp.OK(c, gin.H{"items": items, "limit": limit, "offset": offset})
+	resp.OK(c, gin.H{"items": items, "total": total, "limit": limit, "offset": offset})
 }
 
 // GET /api/me/images/tasks/:id

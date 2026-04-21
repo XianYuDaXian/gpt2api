@@ -147,7 +147,7 @@ export interface ImageTask {
 export function listMyImageTasks(params: {
   limit?: number
   offset?: number
-} = {}): Promise<{ items: ImageTask[]; limit: number; offset: number }> {
+} = {}): Promise<{ items: ImageTask[]; total: number; limit: number; offset: number }> {
   return http.get('/api/me/images/tasks', { params })
 }
 

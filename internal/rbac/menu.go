@@ -27,6 +27,8 @@ var menuTree = []Menu{
 				Perms: []Permission{PermSelfKey}},
 			{Key: "personal.usage", Title: "使用记录", Icon: "Histogram", Path: "/personal/usage",
 				Perms: []Permission{PermSelfUsage}},
+			{Key: "personal.images", Title: "图片记录", Icon: "Picture", Path: "/personal/images",
+				Perms: []Permission{PermSelfImage}},
 			{Key: "personal.billing", Title: "账单与充值", Icon: "Wallet", Path: "/personal/billing",
 				Perms: []Permission{PermSelfRecharge}},
 			{Key: "personal.play", Title: "在线体验", Icon: "MagicStick", Path: "/personal/play",

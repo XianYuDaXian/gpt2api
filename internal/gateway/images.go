@@ -249,16 +249,17 @@ func (h *ImagesHandler) ImageGenerations(c *gin.Context) {
 	}
 
 	res := h.Runner.Run(runCtx, image.RunOptions{
-		TaskID:        taskID,
-		UserID:        ak.UserID,
-		KeyID:         ak.ID,
-		ModelID:       m.ID,
-		UpstreamModel: m.UpstreamModelSlug,
-		Prompt:        maybeAppendClaritySuffix(req.Prompt),
-		N:             req.N,
-		MaxAttempts:   maxAttempts,
-		References:    refs,
-		AcceptPreview: true,
+		TaskID:              taskID,
+		UserID:              ak.UserID,
+		KeyID:               ak.ID,
+		ModelID:             m.ID,
+		UpstreamModel:       m.UpstreamModelSlug,
+		Prompt:              maybeAppendClaritySuffix(req.Prompt),
+		N:                   req.N,
+		MaxAttempts:         maxAttempts,
+		References:          refs,
+		AcceptPreview:       true,
+		ArchiveConversation: h.archiveImageConversationEnabled(),
 	})
 	rec.AccountID = res.AccountID
 
@@ -453,15 +454,16 @@ func (h *ImagesHandler) handleChatAsImage(c *gin.Context, rec *usage.Log, ak *ap
 	defer cancel()
 
 	res := h.Runner.Run(runCtx, image.RunOptions{
-		TaskID:        taskID,
-		UserID:        ak.UserID,
-		KeyID:         ak.ID,
-		ModelID:       m.ID,
-		UpstreamModel: m.UpstreamModelSlug,
-		Prompt:        maybeAppendClaritySuffix(prompt),
-		N:             1,
-		MaxAttempts:   2,
-		AcceptPreview: true,
+		TaskID:              taskID,
+		UserID:              ak.UserID,
+		KeyID:               ak.ID,
+		ModelID:             m.ID,
+		UpstreamModel:       m.UpstreamModelSlug,
+		Prompt:              maybeAppendClaritySuffix(prompt),
+		N:                   1,
+		MaxAttempts:         2,
+		AcceptPreview:       true,
+		ArchiveConversation: h.archiveImageConversationEnabled(),
 	})
 	rec.AccountID = res.AccountID
 
@@ -539,6 +541,10 @@ func ifEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+func (h *ImagesHandler) archiveImageConversationEnabled() bool {
+	return h != nil && h.Settings != nil && h.Settings.ArchiveImageConversation()
 }
 
 // localizeImageErr 把 runner 返回的英文错误码 + 原始 err.Error() 压成一段中文提示,
@@ -771,16 +777,17 @@ func (h *ImagesHandler) ImageEdits(c *gin.Context) {
 	defer cancel()
 
 	res := h.Runner.Run(runCtx, image.RunOptions{
-		TaskID:        taskID,
-		UserID:        ak.UserID,
-		KeyID:         ak.ID,
-		ModelID:       m.ID,
-		UpstreamModel: m.UpstreamModelSlug,
-		Prompt:        maybeAppendClaritySuffix(prompt),
-		N:             n,
-		MaxAttempts:   1, // 带参考图时只跑一次,避免重复上传
-		References:    refs,
-		AcceptPreview: true,
+		TaskID:              taskID,
+		UserID:              ak.UserID,
+		KeyID:               ak.ID,
+		ModelID:             m.ID,
+		UpstreamModel:       m.UpstreamModelSlug,
+		Prompt:              maybeAppendClaritySuffix(prompt),
+		N:                   n,
+		MaxAttempts:         1, // 带参考图时只跑一次,避免重复上传
+		References:          refs,
+		AcceptPreview:       true,
+		ArchiveConversation: h.archiveImageConversationEnabled(),
 	})
 	rec.AccountID = res.AccountID
 

@@ -41,18 +41,19 @@ type ReferenceImage struct {
 
 // RunOptions 是单次生图的输入。
 type RunOptions struct {
-	TaskID            string
-	UserID            uint64
-	KeyID             uint64
-	ModelID           uint64
-	UpstreamModel     string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
-	Prompt            string
-	N                 int              // 目前上游单次返回固定,N 仅用于计费
-	MaxAttempts       int              // 灰度未命中时最大重试,默认 2
-	PerAttemptTimeout time.Duration    // 单次尝试总超时,默认 5min
-	PollMaxWait       time.Duration    // 轮询最长等待,默认 300s
-	References        []ReferenceImage // 图生图/编辑:参考图
-	AcceptPreview     bool             // 已拿到预览图时立即返回,避免同步请求继续等待 IMG2
+	TaskID              string
+	UserID              uint64
+	KeyID               uint64
+	ModelID             uint64
+	UpstreamModel       string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
+	Prompt              string
+	N                   int              // 目前上游单次返回固定,N 仅用于计费
+	MaxAttempts         int              // 灰度未命中时最大重试,默认 2
+	PerAttemptTimeout   time.Duration    // 单次尝试总超时,默认 5min
+	PollMaxWait         time.Duration    // 轮询最长等待,默认 300s
+	References          []ReferenceImage // 图生图/编辑:参考图
+	AcceptPreview       bool             // 已拿到预览图时立即返回,避免同步请求继续等待 IMG2
+	ArchiveConversation bool             // 成功取到图片后归档上游会话,避免污染官网会话列表
 }
 
 // RunResult 是单次生图的输出。
@@ -506,6 +507,22 @@ loop:
 	}
 	if len(signedURLs) == 0 {
 		return false, ErrDownload, errors.New("all download urls failed")
+	}
+	if opt.ArchiveConversation && convID != "" {
+		archiveCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if err := cli.ArchiveConversation(archiveCtx, convID); err != nil {
+			logger.L().Warn("image runner archive conversation failed",
+				zap.String("task_id", opt.TaskID),
+				zap.Uint64("account_id", lease.Account.ID),
+				zap.String("conv_id", convID),
+				zap.Error(err))
+		} else {
+			logger.L().Info("image runner archived conversation",
+				zap.String("task_id", opt.TaskID),
+				zap.Uint64("account_id", lease.Account.ID),
+				zap.String("conv_id", convID))
+		}
+		cancel()
 	}
 
 	// 最终汇总:把"这次任务跑完,真正给用户的图"用一条 Info 打出来。

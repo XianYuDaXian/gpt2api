@@ -127,6 +127,16 @@ SELECT id, task_id, user_id, key_id, model_id, account_id, prompt, n, size, stat
 	return out, err
 }
 
+// CountByUser 统计当前用户的图片任务数量。
+func (d *DAO) CountByUser(ctx context.Context, userID uint64) (int64, error) {
+	var total int64
+	err := d.db.GetContext(ctx, &total, `
+SELECT COUNT(*)
+  FROM image_tasks
+ WHERE user_id = ?`, userID)
+	return total, err
+}
+
 // DecodeFileIDs 把 JSON 列解出字符串数组。
 func (t *Task) DecodeFileIDs() []string {
 	var out []string

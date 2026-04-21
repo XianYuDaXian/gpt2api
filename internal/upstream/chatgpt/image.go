@@ -2,17 +2,17 @@
 //
 // 完整链路(和文字聊天共用 f/conversation,只通过 system_hints=["picture_v2"] 区分):
 //
-//	0. (可选) GET /                              → 拿 oai-did cookie
-//	1. POST /backend-api/f/conversation/prepare      → conduit_token(灰度分桶关键)
-//	2. POST /backend-api/sentinel/chat-requirements → chat_token + 可选 POW 挑战
-//	3. POST /backend-api/f/conversation (SSE)         → 边解析边收 file-service://
-//	4. 灰度命中判据:SSE 没直出 file-service 时轮询
-//	   GET /backend-api/conversation/{id}
-//	   - IMG2 tool 消息 ≥ 2 条 → 灰度命中,取最新那条
-//	   - 只 1 条 → preview_only(非灰度,换账号重试)
-//	5. GET /backend-api/files/{fid}/download                   → 签名 URL(file-service)
-//	   GET /backend-api/conversation/{cid}/attachment/{sid}/download → 签名 URL(sediment)
-//	6. GET 签名 URL → 图片字节
+//  0. (可选) GET /                              → 拿 oai-did cookie
+//  1. POST /backend-api/f/conversation/prepare      → conduit_token(灰度分桶关键)
+//  2. POST /backend-api/sentinel/chat-requirements → chat_token + 可选 POW 挑战
+//  3. POST /backend-api/f/conversation (SSE)         → 边解析边收 file-service://
+//  4. 灰度命中判据:SSE 没直出 file-service 时轮询
+//     GET /backend-api/conversation/{id}
+//     - IMG2 tool 消息 ≥ 2 条 → 灰度命中,取最新那条
+//     - 只 1 条 → preview_only(非灰度,换账号重试)
+//  5. GET /backend-api/files/{fid}/download                   → 签名 URL(file-service)
+//     GET /backend-api/conversation/{cid}/attachment/{sid}/download → 签名 URL(sediment)
+//  6. GET 签名 URL → 图片字节
 //
 // 注意:不要调用 /backend-api/conversation/init——这是老客户端路径,在免费账号上会
 // 直接 404 让整条链路失败,上游把 picture_v2 路由完全交给 f/conversation 的 payload。
@@ -374,14 +374,14 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 
 // ImageToolMsg 是 conversation.mapping 里一条 IMG2 tool 消息的关键字段。
 type ImageToolMsg struct {
-	MessageID    string
-	CreateTime   float64
-	ModelSlug    string
-	Recipient    string
-	AuthorName   string
+	MessageID     string
+	CreateTime    float64
+	ModelSlug     string
+	Recipient     string
+	AuthorName    string
 	ImageGenTitle string
-	FileIDs      []string // file-service
-	SedimentIDs  []string // sediment
+	FileIDs       []string // file-service
+	SedimentIDs   []string // sediment
 }
 
 // GetConversationMapping 读取会话全量 mapping(轮询用)。
@@ -411,6 +411,33 @@ func (c *Client) GetConversationMapping(ctx context.Context, convID string) (map
 		return nil, fmt.Errorf("decode conversation: %w", err)
 	}
 	return out, nil
+}
+
+// ArchiveConversation 把 chatgpt.com 上游会话设置为归档。
+func (c *Client) ArchiveConversation(ctx context.Context, convID string) error {
+	if convID == "" {
+		return fmt.Errorf("conv_id required")
+	}
+	body := strings.NewReader(`{"is_archived":true}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch,
+		c.opts.BaseURL+"/backend-api/conversation/"+convID, body)
+	if err != nil {
+		return err
+	}
+	c.commonHeaders(req)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	buf, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 400 {
+		return &UpstreamError{Status: res.StatusCode, Message: "conversation archive failed", Body: string(buf)}
+	}
+	return nil
 }
 
 // ExtractImageToolMsgs 从 conversation.mapping 里提取所有 IMG2 tool 消息。
@@ -529,9 +556,9 @@ func (c *Client) PollConversationForImages(ctx context.Context, convID string, o
 
 	deadline := time.Now().Add(opt.MaxWait)
 	var (
-		stableCount   int
-		lastSedSig    string
-		firstToolTs   time.Time
+		stableCount    int
+		lastSedSig     string
+		firstToolTs    time.Time
 		consecutive429 int
 	)
 

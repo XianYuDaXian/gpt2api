@@ -26,42 +26,43 @@ type KeyDef struct {
 // ---- key 常量 ----
 const (
 	// 通用
-	SiteName         = "site.name"
-	SiteDescription  = "site.description"
-	SiteLogoURL      = "site.logo_url"
-	SiteFooter       = "site.footer"
-	SiteContactEmail = "site.contact_email"
-	SiteDocsURL      = "site.docs_url"
-	SiteAPIBaseURL   = "site.api_base_url"
+	SiteName          = "site.name"
+	SiteDescription   = "site.description"
+	SiteLogoURL       = "site.logo_url"
+	SiteFooter        = "site.footer"
+	SiteContactEmail  = "site.contact_email"
+	SiteDocsURL       = "site.docs_url"
+	SiteAPIBaseURL    = "site.api_base_url"
 	UIDefaultPageSize = "ui.default_page_size"
 
 	// 安全与认证
-	AuthAllowRegister       = "auth.allow_register"
-	AuthRequireEmailVerify  = "auth.require_email_verify"
+	AuthAllowRegister        = "auth.allow_register"
+	AuthRequireEmailVerify   = "auth.require_email_verify"
 	AuthEmailDomainWhitelist = "auth.email_domain_whitelist"
-	AuthPasswordMinLength   = "auth.password_min_length"
-	AuthInviteCodeRequired  = "auth.invite_code_required"
-	Auth2FAEnabled          = "auth.2fa_enabled"
-	AuthJWTAccessTTLSec     = "auth.jwt_access_ttl_sec"
-	AuthJWTRefreshTTLSec    = "auth.jwt_refresh_ttl_sec"
+	AuthPasswordMinLength    = "auth.password_min_length"
+	AuthInviteCodeRequired   = "auth.invite_code_required"
+	Auth2FAEnabled           = "auth.2fa_enabled"
+	AuthJWTAccessTTLSec      = "auth.jwt_access_ttl_sec"
+	AuthJWTRefreshTTLSec     = "auth.jwt_refresh_ttl_sec"
 
 	// 用户默认值(旧 auth.* 保留兼容)
-	AuthDefaultGroupID       = "auth.default_group_id"
-	AuthSignupBonusCredits   = "auth.signup_bonus_credits"
-	LimitDefaultRPM          = "limit.default_rpm"
-	LimitDefaultTPM          = "limit.default_tpm"
-	KeyDefaultDailyQuota     = "key.default_daily_quota_credits"
-	KeyMaxPerUser            = "key.max_per_user"
+	AuthDefaultGroupID     = "auth.default_group_id"
+	AuthSignupBonusCredits = "auth.signup_bonus_credits"
+	LimitDefaultRPM        = "limit.default_rpm"
+	LimitDefaultTPM        = "limit.default_tpm"
+	KeyDefaultDailyQuota   = "key.default_daily_quota_credits"
+	KeyMaxPerUser          = "key.max_per_user"
 
 	// 网关与调度
-	GatewayUpstreamTimeoutSec = "gateway.upstream_timeout_sec"
-	GatewaySSEReadTimeoutSec  = "gateway.sse_read_timeout_sec"
-	GatewayCooldown429Sec     = "gateway.cooldown_429_sec"
-	GatewayWarnedPauseHours   = "gateway.warned_pause_hours"
-	GatewayDailyUsageRatio    = "gateway.daily_usage_ratio"
-	GatewayRetryOnFailure     = "gateway.retry_on_failure"
-	GatewayRetryMax           = "gateway.retry_max"
-	GatewayDispatchQueueWaitSec = "gateway.dispatch_queue_wait_sec"
+	GatewayUpstreamTimeoutSec       = "gateway.upstream_timeout_sec"
+	GatewaySSEReadTimeoutSec        = "gateway.sse_read_timeout_sec"
+	GatewayCooldown429Sec           = "gateway.cooldown_429_sec"
+	GatewayWarnedPauseHours         = "gateway.warned_pause_hours"
+	GatewayDailyUsageRatio          = "gateway.daily_usage_ratio"
+	GatewayRetryOnFailure           = "gateway.retry_on_failure"
+	GatewayRetryMax                 = "gateway.retry_max"
+	GatewayDispatchQueueWaitSec     = "gateway.dispatch_queue_wait_sec"
+	GatewayArchiveImageConversation = "gateway.archive_image_conversation"
 
 	// 代理管理(健康探测)
 	ProxyProbeEnabled     = "proxy.probe_enabled"
@@ -80,13 +81,13 @@ const (
 	AccountDefaultClientID       = "account.default_client_id"
 
 	// 计费与充值
-	BillingCreditPerCNY         = "billing.credit_per_cny"
-	BillingNotifyAdminOnAdjust  = "billing.notify_admin_on_adjust"
-	RechargeEnabled             = "recharge.enabled"
-	RechargeMinCNY              = "recharge.min_cny"
-	RechargeMaxCNY              = "recharge.max_cny"
-	RechargeDailyLimitCNY       = "recharge.daily_limit_cny"
-	RechargeOrderExpireMinutes  = "recharge.order_expire_minutes"
+	BillingCreditPerCNY        = "billing.credit_per_cny"
+	BillingNotifyAdminOnAdjust = "billing.notify_admin_on_adjust"
+	RechargeEnabled            = "recharge.enabled"
+	RechargeMinCNY             = "recharge.min_cny"
+	RechargeMaxCNY             = "recharge.max_cny"
+	RechargeDailyLimitCNY      = "recharge.daily_limit_cny"
+	RechargeOrderExpireMinutes = "recharge.order_expire_minutes"
 
 	// 邮件
 	MailEnabledDisplay = "mail.enabled_display"
@@ -131,6 +132,7 @@ var Defs = []KeyDef{
 	{Key: GatewayRetryOnFailure, Type: "bool", Category: "gateway", Default: "true", Label: "失败自动重试", Desc: "遇到可恢复错误时切换账号重试"},
 	{Key: GatewayRetryMax, Type: "int", Category: "gateway", Default: "1", Label: "最大重试次数", Desc: "0~3"},
 	{Key: GatewayDispatchQueueWaitSec, Type: "int", Category: "gateway", Default: "120", Label: "账号排队等待上限(秒)", Desc: "并发大于账号数时,请求会在队列里等空闲账号;超过此秒数仍拿不到才返回 no_available_account。0=不排队,立即失败"},
+	{Key: GatewayArchiveImageConversation, Type: "bool", Category: "gateway", Default: "false", Label: "生图后归档上游会话", Desc: "图片结果可下载后自动把 chatgpt.com 对话设为归档,避免污染官网会话列表"},
 
 	// ---------- 代理管理(健康探测) ----------
 	{Key: ProxyProbeEnabled, Type: "bool", Category: "gateway", Default: "true", Label: "代理探测开关", Desc: "开启后后台定时对启用的代理做连通性探测,更新健康分"},

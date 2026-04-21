@@ -36,6 +36,8 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'API Keys', perm: 'self:key' } },
       { path: 'usage', component: () => import('@/views/personal/Usage.vue'),
         meta: { title: '使用记录', perm: 'self:usage' } },
+      { path: 'images', component: () => import('@/views/personal/Images.vue'),
+        meta: { title: '图片记录', perm: 'self:image' } },
       { path: 'billing', component: () => import('@/views/personal/Billing.vue'),
         meta: { title: '账单与充值', perm: 'self:recharge' } },
       { path: 'play', component: () => import('@/views/personal/OnlinePlay.vue'),
@@ -44,7 +46,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '接口文档', perm: ['self:usage', 'self:image'] } },
       // 旧路径兼容
       { path: 'playground', redirect: '/personal/docs' },
-      { path: 'images', redirect: '/personal/play' },
     ],
   },
   {
