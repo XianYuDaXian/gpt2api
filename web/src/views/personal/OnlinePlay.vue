@@ -14,7 +14,6 @@ import {
   type PlayChatMessage,
   type PlayImageData,
 } from '@/api/me'
-import { ENABLE_CHAT_MODEL } from '@/config/feature'
 
 // ----------------------------------------------------
 // 用户 / 模型
@@ -22,6 +21,7 @@ import { ENABLE_CHAT_MODEL } from '@/config/feature'
 const userStore = useUserStore()
 const siteStore = useSiteStore()
 const { user } = storeToRefs(userStore)
+const enableChatModel = computed(() => siteStore.enableChatModel())
 
 const balance = computed(() => formatCredit(user.value?.credit_balance))
 
@@ -51,7 +51,7 @@ onMounted(async () => {
     // feature flag 关闭时,前端直接把 chat 类型的模型从列表过滤掉,
     // 保证 chatModels / imageModels / selectedChatModel 等下游 state 都不会
     // 拿到 chat 模型(即便模板里还有残留引用)。
-    models.value = ENABLE_CHAT_MODEL
+    models.value = enableChatModel.value
       ? m.items
       : m.items.filter((x) => x.type !== 'chat')
     const firstChat = m.items.find((x) => x.type === 'chat')
@@ -67,7 +67,7 @@ onMounted(async () => {
 // Tabs
 // ----------------------------------------------------
 const activeTab = ref<'chat' | 'text2img' | 'img2img'>(
-  ENABLE_CHAT_MODEL ? 'chat' : 'text2img',
+  enableChatModel.value ? 'chat' : 'text2img',
 )
 
 // ====================================================
@@ -458,7 +458,7 @@ watch(activeTab, (v) => {
         <div class="hero-txt">
           <h2 class="hero-title">在线体验</h2>
           <span class="hero-sub">
-            浏览器中直接调用 GPT {{ ENABLE_CHAT_MODEL ? '文字 / ' : '' }}图像模型 · 文生图 & 图生图 · 同一账号池、同一套计费,记录同步到「使用记录」
+            浏览器中直接调用 GPT {{ enableChatModel ? '文字 / ' : '' }}图像模型 · 文生图 & 图生图 · 同一账号池、同一套计费,记录同步到「使用记录」
           </span>
         </div>
       </div>
@@ -467,7 +467,7 @@ watch(activeTab, (v) => {
           <span class="mini-num">{{ balance }}</span>
           <span class="mini-lbl">积分</span>
         </div>
-        <template v-if="ENABLE_CHAT_MODEL">
+        <template v-if="enableChatModel">
           <span class="mini-dot" />
           <div class="mini-stat">
             <span class="mini-num">{{ chatModels.length }}</span>
@@ -487,7 +487,7 @@ watch(activeTab, (v) => {
       <!-- =================================================== -->
       <!--                          Chat                         -->
       <!-- =================================================== -->
-      <el-tab-pane v-if="ENABLE_CHAT_MODEL" name="chat">
+      <el-tab-pane v-if="enableChatModel" name="chat">
         <template #label>
           <span class="tab-lbl"><el-icon><ChatDotRound /></el-icon> 对话</span>
         </template>

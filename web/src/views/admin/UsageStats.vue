@@ -2,11 +2,13 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import * as statsApi from '@/api/stats'
 import { formatCredit } from '@/utils/format'
-import { ENABLE_CHAT_MODEL } from '@/config/feature'
+import { useSiteStore } from '@/stores/site'
 
 const loading = ref(false)
 const data = ref<statsApi.StatsResp | null>(null)
 const filter = reactive({ days: 14, type: '' as '' | 'chat' | 'image', status: '' as '' | 'success' | 'failed' })
+const siteStore = useSiteStore()
+const enableChatModel = computed(() => siteStore.enableChatModel())
 
 async function load() {
   loading.value = true
@@ -58,7 +60,7 @@ onMounted(load)
           </el-select>
           <el-select v-model="filter.type" style="width:130px" clearable placeholder="类型" @change="load">
             <el-option label="全部" value="" />
-            <el-option v-if="ENABLE_CHAT_MODEL" label="对话" value="chat" />
+            <el-option v-if="enableChatModel" label="对话" value="chat" />
             <el-option label="生图" value="image" />
           </el-select>
           <el-select v-model="filter.status" style="width:130px" clearable placeholder="状态" @change="load">
@@ -78,7 +80,7 @@ onMounted(load)
           <div class="val">{{ overall?.requests ?? 0 }}</div>
           <div class="sub">失败 {{ overall?.failures ?? 0 }} · 成功率 {{ successRate(overall!) }}</div>
         </el-card></el-col>
-        <el-col v-if="ENABLE_CHAT_MODEL" :md="6" :sm="12"><el-card shadow="never" class="stat">
+        <el-col v-if="enableChatModel" :md="6" :sm="12"><el-card shadow="never" class="stat">
           <div class="lbl">对话请求</div>
           <div class="val">{{ overall?.chat_requests ?? 0 }}</div>
           <div class="sub">生图张数 {{ overall?.image_images ?? 0 }}</div>

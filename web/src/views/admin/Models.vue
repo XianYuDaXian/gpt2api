@@ -5,16 +5,18 @@ import { Plus } from '@element-plus/icons-vue'
 import * as statsApi from '@/api/stats'
 import { formatCredit } from '@/utils/format'
 import { useUserStore } from '@/stores/user'
-import { ENABLE_CHAT_MODEL } from '@/config/feature'
+import { useSiteStore } from '@/stores/site'
 
 const userStore = useUserStore()
+const siteStore = useSiteStore()
 const canWrite = computed(() => userStore.hasPerm('model:write'))
+const enableChatModel = computed(() => siteStore.enableChatModel())
 
 const loading = ref(false)
 const rows = ref<statsApi.Model[]>([])
 // feature flag 关掉时默认把筛选固定到 image,表格、弹窗里也就看不到 chat 模型;
 // 库里如果已经有 chat 模型历史数据,仍然保留,只是 UI 入口不暴露。
-const filterType = ref<string>(ENABLE_CHAT_MODEL ? '' : 'image')
+const filterType = ref<string>(enableChatModel.value ? '' : 'image')
 
 async function load() {
   loading.value = true
@@ -47,7 +49,7 @@ const formRef = ref<FormInstance>()
 const emptyForm = (): statsApi.ModelUpsert & { id: number } => ({
   id: 0,
   slug: '',
-  type: ENABLE_CHAT_MODEL ? 'chat' : 'image',
+  type: enableChatModel.value ? 'chat' : 'image',
   upstream_model_slug: '',
   input_price_per_1m: 0,
   output_price_per_1m: 0,
@@ -154,8 +156,8 @@ onMounted(load)
         </div>
         <div class="flex-wrap-gap">
           <el-radio-group v-model="filterType" size="small">
-            <el-radio-button v-if="ENABLE_CHAT_MODEL" label="">全部</el-radio-button>
-            <el-radio-button v-if="ENABLE_CHAT_MODEL" label="chat">对话</el-radio-button>
+            <el-radio-button v-if="enableChatModel" label="">全部</el-radio-button>
+            <el-radio-button v-if="enableChatModel" label="chat">对话</el-radio-button>
             <el-radio-button label="image">生图</el-radio-button>
           </el-radio-group>
           <el-button
@@ -184,7 +186,7 @@ onMounted(load)
         <el-table-column prop="upstream_model_slug" label="上游 slug" min-width="170" show-overflow-tooltip>
           <template #default="{ row }"><code>{{ row.upstream_model_slug }}</code></template>
         </el-table-column>
-        <el-table-column v-if="ENABLE_CHAT_MODEL" label="价目(chat)" min-width="220">
+        <el-table-column v-if="enableChatModel" label="价目(chat)" min-width="220">
           <template #default="{ row }">
             <div v-if="row.type === 'chat'" style="font-size:12px;line-height:1.5">
               <div>输入 <b>{{ perMillion(row.input_price_per_1m) }}</b> / 1M tok</div>
@@ -244,13 +246,13 @@ onMounted(load)
           />
           <div class="hint">
             创建后不可修改;这是
-            <template v-if="ENABLE_CHAT_MODEL">/v1/chat/completions 与 </template>
+            <template v-if="enableChatModel">/v1/chat/completions 与 </template>
             /v1/images/generations 中 model 字段传入的值。
           </div>
         </el-form-item>
         <el-form-item label="类型" prop="type">
           <el-radio-group v-model="form.type">
-            <el-radio-button v-if="ENABLE_CHAT_MODEL" label="chat">对话 chat</el-radio-button>
+            <el-radio-button v-if="enableChatModel" label="chat">对话 chat</el-radio-button>
             <el-radio-button label="image">生图 image</el-radio-button>
           </el-radio-group>
         </el-form-item>

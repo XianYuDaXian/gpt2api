@@ -379,9 +379,14 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 	// 8) 转发响应
 	id := "chatcmpl-" + uuid.NewString()
 	if req.Stream {
-		h.streamOpenAI(c, id, req.Model, stream, cr.IsFreeAccount())
+		h.streamOpenAI(c, id, req.Model, stream, cr.IsFreeAccount(), cr.Turnstile.Required)
 	} else {
-		h.collectOpenAI(c, id, req.Model, stream, cr.IsFreeAccount())
+		h.collectOpenAI(c, id, req.Model, stream, cr.IsFreeAccount(), cr.Turnstile.Required)
+	}
+
+	if h.isEmptyUpstream(c) {
+		refund("upstream_empty")
+		return
 	}
 
 	// 9) 结算
@@ -411,7 +416,7 @@ func (h *Handler) ChatCompletions(c *gin.Context) {
 // streamOpenAI 将上游 SSE 事件转为 OpenAI 风格流式响应。
 // freeAccount 标记上游 persona 是 chatgpt-freeaccount,用于在"没拿到任何内容"
 // 的兜底分支给出更精准的错误消息(免费账号会被上游静默拒绝)。
-func (h *Handler) streamOpenAI(c *gin.Context, id, model string, stream <-chan chatgpt.SSEEvent, freeAccount bool) {
+func (h *Handler) streamOpenAI(c *gin.Context, id, model string, stream <-chan chatgpt.SSEEvent, freeAccount, turnstileRequired bool) {
 	w := c.Writer
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -466,7 +471,10 @@ func (h *Handler) streamOpenAI(c *gin.Context, id, model string, stream <-chan c
 
 	// 兜底:上游接受了请求但没产出任何可见文本
 	if total.Len() == 0 && evCount > 0 {
-		writeChunk(w, flusher, id, model, DeltaMsg{Content: emptyReplyMessage(freeAccount, silentlyRejected)}, nil)
+		c.Set("upstream_empty", true)
+		c.Set("upstream_silent_rejected", silentlyRejected)
+		c.Set("upstream_turnstile_required", turnstileRequired)
+		writeChunk(w, flusher, id, model, DeltaMsg{Content: emptyReplyMessage(freeAccount, silentlyRejected, turnstileRequired)}, nil)
 	}
 
 	stop := "stop"
@@ -480,7 +488,7 @@ func (h *Handler) streamOpenAI(c *gin.Context, id, model string, stream <-chan c
 	c.Set("completion_tokens", (total.Len()+3)/4)
 }
 
-func (h *Handler) collectOpenAI(c *gin.Context, id, model string, stream <-chan chatgpt.SSEEvent, freeAccount bool) {
+func (h *Handler) collectOpenAI(c *gin.Context, id, model string, stream <-chan chatgpt.SSEEvent, freeAccount, turnstileRequired bool) {
 	var extr deltaExtractor
 	var content strings.Builder
 	evCount := 0
@@ -515,11 +523,15 @@ func (h *Handler) collectOpenAI(c *gin.Context, id, model string, stream <-chan 
 		zap.Bool("silently_rejected", silentlyRejected))
 
 	// 兜底:上游接受了请求但没产出任何可见文本(见 streamOpenAI 同名兜底的说明)
+	upstreamContentLen := content.Len()
 	if content.Len() == 0 && evCount > 0 {
-		content.WriteString(emptyReplyMessage(freeAccount, silentlyRejected))
+		c.Set("upstream_empty", true)
+		c.Set("upstream_silent_rejected", silentlyRejected)
+		c.Set("upstream_turnstile_required", turnstileRequired)
+		content.WriteString(emptyReplyMessage(freeAccount, silentlyRejected, turnstileRequired))
 	}
 
-	completionTokens := (content.Len() + 3) / 4
+	completionTokens := (upstreamContentLen + 3) / 4
 	c.Set("completion_tokens", completionTokens)
 
 	resp := ChatCompletionResponse{
@@ -539,6 +551,15 @@ func (h *Handler) collectOpenAI(c *gin.Context, id, model string, stream <-chan 
 		},
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func (h *Handler) isEmptyUpstream(c *gin.Context) bool {
+	v, ok := c.Get("upstream_empty")
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
 }
 
 func (h *Handler) lastCompletionTokens(c *gin.Context) int {
@@ -594,8 +615,11 @@ func isSilentRejection(data []byte) bool {
 }
 
 // emptyReplyMessage 根据账号类型和上游信号,返回给最终用户看的兜底文案。
-func emptyReplyMessage(freeAccount, silentlyRejected bool) string {
+func emptyReplyMessage(freeAccount, silentlyRejected, turnstileRequired bool) string {
 	switch {
+	case silentlyRejected && turnstileRequired:
+		return "上游要求 Turnstile 风控验证,当前服务端未配置 Turnstile solver,浏览器官网可用不代表 API 服务端可通过该验证。" +
+			"请配置 solver、导入同一出口环境下的新 Cookie,或更换已通过风控的账号/代理后再试。"
 	case silentlyRejected && freeAccount:
 		return "上游检测到当前账号为免费版(chatgpt-freeaccount),已静默拒绝本次请求。" +
 			"请联系管理员更换 ChatGPT Plus / Team 账号后再试。"

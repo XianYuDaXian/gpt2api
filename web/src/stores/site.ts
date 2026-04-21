@@ -17,6 +17,7 @@ export const useSiteStore = defineStore('site', () => {
     'site.logo_url': '',
     'site.footer': '',
     'site.contact_email': '',
+    'site.enable_chat_model': 'false',
     'auth.allow_register': 'true',
   })
   const loaded = ref(false)
@@ -63,5 +64,10 @@ export const useSiteStore = defineStore('site', () => {
     return v === 'true' || v === '1' || v === 'yes'
   }
 
-  return { info, loaded, refresh, get, apiBaseURL, allowRegister }
+  function enableChatModel(): boolean {
+    const v = (info.value['site.enable_chat_model'] || '').toLowerCase()
+    return v === 'true' || v === '1' || v === 'yes'
+  }
+
+  return { info, loaded, refresh, get, apiBaseURL, allowRegister, enableChatModel }
 })

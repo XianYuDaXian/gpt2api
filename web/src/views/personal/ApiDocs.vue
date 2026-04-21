@@ -13,11 +13,12 @@ import {
   type MyStatsResp,
 } from '@/api/me'
 import { formatCredit, formatDateTime, formatErrorCode } from '@/utils/format'
-import { ENABLE_CHAT_MODEL } from '@/config/feature'
 import { resolvePublicUrl } from '@/utils/url'
 
-const activeTab = ref<'chat' | 'image'>(ENABLE_CHAT_MODEL ? 'chat' : 'image')
 const site = useSiteStore()
+const enableChatModel = computed(() => site.enableChatModel())
+
+const activeTab = ref<'chat' | 'image'>(enableChatModel.value ? 'chat' : 'image')
 
 const models = ref<SimpleModel[]>([])
 const chatModels = computed(() => models.value.filter((m) => m.type === 'chat'))
@@ -182,7 +183,7 @@ function statusTag(s: string): 'success' | 'warning' | 'danger' | 'info' {
 onMounted(async () => {
   try {
     const m = await listMyModels()
-    models.value = ENABLE_CHAT_MODEL
+    models.value = enableChatModel.value
       ? m.items
       : m.items.filter((x) => x.type !== 'chat')
     const firstChat = m.items.find((x) => x.type === 'chat')
@@ -193,7 +194,7 @@ onMounted(async () => {
     // 忽略
   }
   loadStats()
-  if (ENABLE_CHAT_MODEL) loadChatLogs()
+  if (enableChatModel.value) loadChatLogs()
   loadImageTasks()
 })
 </script>
@@ -204,7 +205,7 @@ onMounted(async () => {
       <div>
         <h2 class="page-title">接口文档 & 用量</h2>
         <p class="desc">
-          <template v-if="ENABLE_CHAT_MODEL">
+          <template v-if="enableChatModel">
             外部调用走 <code>/v1/chat/completions</code> 与 <code>/v1/images/generations</code>,
           </template>
           <template v-else>
@@ -218,7 +219,7 @@ onMounted(async () => {
           <div class="lbl">14 天请求</div>
           <div class="val">{{ stats?.overall.requests ?? 0 }}</div>
         </div>
-        <div v-if="ENABLE_CHAT_MODEL" class="stat">
+        <div v-if="enableChatModel" class="stat">
           <div class="lbl">文字 Token(in/out)</div>
           <div class="val">{{ stats?.overall.input_tokens ?? 0 }} / {{ stats?.overall.output_tokens ?? 0 }}</div>
         </div>
@@ -235,7 +236,7 @@ onMounted(async () => {
 
     <el-tabs v-model="activeTab" class="pg-tabs">
       <!-- ================== 文字对话 ================== -->
-      <el-tab-pane v-if="ENABLE_CHAT_MODEL" label="对话生成(文字模型)" name="chat">
+      <el-tab-pane v-if="enableChatModel" label="对话生成(文字模型)" name="chat">
         <div class="card-block">
           <div class="row">
             <div class="label">文字模型</div>

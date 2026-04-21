@@ -3,12 +3,14 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import * as meApi from '@/api/me'
 import { formatCredit, formatDateTime, formatErrorCode } from '@/utils/format'
-import { ENABLE_CHAT_MODEL } from '@/config/feature'
+import { useSiteStore } from '@/stores/site'
 
 // ==================== 概览 + 每日 + 模型 TOP ====================
 
 const statsLoading = ref(false)
 const stats = ref<meApi.MyStatsResp | null>(null)
+const siteStore = useSiteStore()
+const enableChatModel = computed(() => siteStore.enableChatModel())
 
 const statsFilter = reactive({
   days: 14,
@@ -239,7 +241,7 @@ onMounted(() => {
           <el-select v-model="statsFilter.type" style="width:120px" clearable placeholder="类型"
                      @change="loadStats">
             <el-option label="全部" value="" />
-            <el-option v-if="ENABLE_CHAT_MODEL" label="对话" value="chat" />
+            <el-option v-if="enableChatModel" label="对话" value="chat" />
             <el-option label="生图" value="image" />
           </el-select>
           <el-button :loading="statsLoading" type="primary" @click="loadStats">
@@ -258,7 +260,7 @@ onMounted(() => {
             </div>
           </div>
         </el-col>
-        <el-col v-if="ENABLE_CHAT_MODEL" :md="6" :sm="12">
+        <el-col v-if="enableChatModel" :md="6" :sm="12">
           <div class="sum-card chat">
             <div class="sum-title">对话请求</div>
             <div class="sum-value">{{ overall?.chat_requests ?? 0 }}</div>
@@ -467,7 +469,7 @@ onMounted(() => {
               <el-select v-model="logFilter.type" style="width:120px" clearable placeholder="类型"
                          @change="refreshLogs">
                 <el-option label="全部" value="" />
-                <el-option v-if="ENABLE_CHAT_MODEL" label="对话" value="chat" />
+                <el-option v-if="enableChatModel" label="对话" value="chat" />
                 <el-option label="生图" value="image" />
               </el-select>
               <el-select v-model="logFilter.status" style="width:120px" clearable placeholder="状态"

@@ -135,6 +135,7 @@ func (s *Service) SiteAPIBaseURL() string {
 	base := strings.TrimSpace(s.GetString(SiteAPIBaseURL))
 	return strings.TrimRight(base, "/")
 }
+func (s *Service) EnableChatModel() bool { return s.GetBool(SiteEnableChatModel) }
 
 // PublicBaseURL 拼接公开访问路径。
 // 留空时返回 path 本身,便于同源部署直接使用相对路径。
