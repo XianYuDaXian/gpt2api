@@ -2,10 +2,10 @@
 //
 // M3 首版采用「同步直出 + 异步查询」混合路线:
 //
-//   * /v1/images/generations 默认是同步(wait_for_result=true),请求直接
+//   - /v1/images/generations 默认是同步(wait_for_result=true),请求直接
 //     阻塞到图片生成完成再返回。由网关层的 goroutine pool 承接并发(目标
 //     1000 并发),每个任务落库 + 走一次完整的上游协议链路。
-//   * /v1/images/tasks/:id 可作为异步查询入口,客户端也可设
+//   - /v1/images/tasks/:id 可作为异步查询入口,客户端也可设
 //     wait_for_result=false 拿到 task_id 后自行轮询(适合移动端/脚本)。
 //
 // 这样能复用现有的 Account + Proxy + 计费 + 限流路径,不引入额外的 Redis
@@ -34,6 +34,7 @@ const (
 	ErrTurnstile       = "turnstile_required"
 	ErrUpstream        = "upstream_error"
 	ErrContentPolicy   = "content_policy"
+	ErrTextResponse    = "text_response"
 	ErrPreviewOnly     = "preview_only" // 非灰度桶,未产出 IMG2 终稿
 	ErrPollTimeout     = "poll_timeout"
 	ErrDownload        = "download_failed"
@@ -56,6 +57,7 @@ type Task struct {
 	FileIDs         []byte     `db:"file_ids"`    // JSON 数组字符串
 	ResultURLs      []byte     `db:"result_urls"` // JSON 数组字符串(签名 URL)
 	Error           string     `db:"error"`
+	ErrorMessage    string     `db:"error_message"`
 	EstimatedCredit int64      `db:"estimated_credit"`
 	CreditCost      int64      `db:"credit_cost"`
 	CreatedAt       time.Time  `db:"created_at"`

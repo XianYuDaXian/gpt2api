@@ -100,6 +100,16 @@ func (s *Service) ImportTokensBatch(ctx context.Context, tokens []string, opts I
 
 		var src ImportSource
 		var err error
+		if strings.HasPrefix(strings.TrimSpace(t), "{") {
+			src, err = convertTokenJSONToSource(ctx, httpc, t, clientID, opts.Mode)
+			if err == nil {
+				if clientID == "" && src.ClientID != "" {
+					clientID = src.ClientID
+				}
+				items = append(items, src)
+				continue
+			}
+		}
 		switch opts.Mode {
 		case ImportModeAT:
 			src, err = convertATToSource(t, clientID)
@@ -145,6 +155,40 @@ func (s *Service) ImportTokensBatch(ctx context.Context, tokens []string, opts I
 }
 
 // ---------- 三种模式的 token → ImportSource 转换 ----------
+
+func convertTokenJSONToSource(ctx context.Context, httpc *http.Client, raw, clientID string, mode ImportTokenMode) (ImportSource, error) {
+	items, err := ParseJSONBlob(raw)
+	if err != nil {
+		return ImportSource{}, err
+	}
+	if len(items) == 0 {
+		return ImportSource{}, errors.New("JSON 中没有可导入账号")
+	}
+	src := items[0]
+	if src.ClientID == "" {
+		src.ClientID = strings.TrimSpace(clientID)
+	}
+	if src.AccessToken != "" && src.Email != "" {
+		return src, nil
+	}
+	switch mode {
+	case ImportModeRT:
+		if src.RefreshToken == "" {
+			return ImportSource{}, errors.New("JSON 缺少 refresh_token")
+		}
+		if src.ClientID == "" {
+			return ImportSource{}, errors.New("无法从 JSON/id_token 解析 client_id")
+		}
+		return convertRTToSource(ctx, httpc, src.RefreshToken, src.ClientID)
+	case ImportModeAT:
+		if src.AccessToken == "" {
+			return ImportSource{}, errors.New("JSON 缺少 access_token")
+		}
+		return convertATToSource(src.AccessToken, src.ClientID)
+	default:
+		return src, nil
+	}
+}
 
 // convertATToSource 仅凭 access_token 的 JWT payload 解 email / sub / 过期时间。
 func convertATToSource(at, clientID string) (ImportSource, error) {
@@ -337,27 +381,31 @@ func stExchange(ctx context.Context, httpc *http.Client, st string) (newAT strin
 
 // ---------- JWT claims 解析 ----------
 
-// decodeATClaims 从 access_token(JWT)里取出 email / chatgpt_account_id / exp。
-// 兼容 iOS scope(Codex)和 Web scope(ChatGPT)两种 claim 结构。
-func decodeATClaims(at string) (email, accountID string, expAt time.Time, err error) {
-	parts := strings.Split(at, ".")
+func decodeJWTClaims(token string) (map[string]interface{}, error) {
+	parts := strings.Split(token, ".")
 	if len(parts) < 2 {
-		err = errors.New("非法 JWT(段数不足)")
-		return
+		return nil, errors.New("非法 JWT(段数不足)")
 	}
 	raw, e := base64.RawURLEncoding.DecodeString(parts[1])
 	if e != nil {
 		raw, e = base64.StdEncoding.DecodeString(parts[1])
 		if e != nil {
-			err = fmt.Errorf("base64 解码失败:%w", e)
-			return
+			return nil, fmt.Errorf("base64 解码失败:%w", e)
 		}
 	}
-	// 尽可能宽松地解析,不同 scope 的 claims 字段名不一样。
 	var claims map[string]interface{}
 	if e := json.Unmarshal(raw, &claims); e != nil {
-		err = fmt.Errorf("claims JSON 解码失败:%w", e)
-		return
+		return nil, fmt.Errorf("claims JSON 解码失败:%w", e)
+	}
+	return claims, nil
+}
+
+// decodeATClaims 从 access_token(JWT)里取出 email / chatgpt_account_id / exp。
+// 兼容 iOS scope(Codex)和 Web scope(ChatGPT)两种 claim 结构。
+func decodeATClaims(at string) (email, accountID string, expAt time.Time, err error) {
+	claims, err := decodeJWTClaims(at)
+	if err != nil {
+		return "", "", time.Time{}, err
 	}
 
 	// 1) 直接字段
@@ -395,6 +443,72 @@ func decodeATClaims(at string) (email, accountID string, expAt time.Time, err er
 		expAt = time.Unix(int64(v), 0)
 	}
 	return
+}
+
+func decodeIDTokenHints(idToken string) (email, accountID, clientID string, expAt time.Time) {
+	claims, err := decodeJWTClaims(idToken)
+	if err != nil {
+		return "", "", "", time.Time{}
+	}
+	if v, ok := claims["email"].(string); ok {
+		email = strings.TrimSpace(v)
+	}
+	if v, ok := claims["sub"].(string); ok {
+		accountID = strings.TrimSpace(v)
+	}
+	if v, ok := claims["azp"].(string); ok && strings.TrimSpace(v) != "" {
+		clientID = strings.TrimSpace(v)
+	} else {
+		clientID = clientIDFromAudience(claims["aud"])
+	}
+	if v, ok := claims["exp"].(float64); ok && v > 0 {
+		expAt = time.Unix(int64(v), 0)
+	}
+	if m, ok := claims["https://api.openai.com/auth"].(map[string]interface{}); ok {
+		if accountID == "" {
+			if v, ok := m["user_id"].(string); ok {
+				accountID = strings.TrimSpace(v)
+			}
+		}
+	}
+	return
+}
+
+func clientIDFromAudience(v interface{}) string {
+	pick := func(items []string) string {
+		for _, s := range items {
+			if strings.HasPrefix(s, "pdl") {
+				return s
+			}
+		}
+		for _, s := range items {
+			if strings.HasPrefix(s, "app_") {
+				return s
+			}
+		}
+		for _, s := range items {
+			if s != "" && !strings.Contains(s, "://") {
+				return s
+			}
+		}
+		return ""
+	}
+	switch aud := v.(type) {
+	case string:
+		return pick([]string{strings.TrimSpace(aud)})
+	case []interface{}:
+		items := make([]string, 0, len(aud))
+		for _, it := range aud {
+			if s, ok := it.(string); ok {
+				items = append(items, strings.TrimSpace(s))
+			}
+		}
+		return pick(items)
+	case []string:
+		return pick(aud)
+	default:
+		return ""
+	}
 }
 
 // friendlyImportErr 把底层 http 错误压成简短中文,避免把 URL / stacktrace 泄露到前端。

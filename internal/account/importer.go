@@ -254,6 +254,35 @@ func (b tokenFileB) toSource() (ImportSource, bool) {
 	if src.AccountType == "" {
 		src.AccountType = "codex"
 	}
+	if src.Email == "" || src.ChatGPTAccountID == "" || src.ExpiredAt.IsZero() {
+		email, accountID, expAt, err := decodeATClaims(src.AccessToken)
+		if err == nil {
+			if src.Email == "" {
+				src.Email = email
+			}
+			if src.ChatGPTAccountID == "" {
+				src.ChatGPTAccountID = accountID
+			}
+			if src.ExpiredAt.IsZero() {
+				src.ExpiredAt = expAt
+			}
+		}
+	}
+	if b.IDToken != "" && (src.Email == "" || src.ChatGPTAccountID == "" || src.ClientID == "" || src.ExpiredAt.IsZero()) {
+		email, accountID, clientID, expAt := decodeIDTokenHints(b.IDToken)
+		if src.Email == "" {
+			src.Email = email
+		}
+		if src.ChatGPTAccountID == "" {
+			src.ChatGPTAccountID = accountID
+		}
+		if src.ClientID == "" {
+			src.ClientID = clientID
+		}
+		if src.ExpiredAt.IsZero() {
+			src.ExpiredAt = expAt
+		}
+	}
 	if b.Expired != "" {
 		if t, err := time.Parse(time.RFC3339, b.Expired); err == nil {
 			src.ExpiredAt = t

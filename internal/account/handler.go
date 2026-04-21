@@ -384,11 +384,6 @@ func (h *Handler) ImportTokens(c *gin.Context) {
 		resp.BadRequest(c, "不支持的 mode(仅 at / rt / st)")
 		return
 	}
-	if mode == ImportModeRT && strings.TrimSpace(req.ClientID) == "" {
-		resp.BadRequest(c, "RT 模式必须提供 client_id(APPID)")
-		return
-	}
-
 	upd := true
 	if req.UpdateExisting != nil {
 		upd = *req.UpdateExisting

@@ -46,6 +46,11 @@ function imageURLs(task?: meApi.ImageTask | null) {
   return (task?.image_urls || []).map((u) => resolvePublicUrl(u, apiBaseURL.value))
 }
 
+function taskErrorText(task?: meApi.ImageTask | null) {
+  if (!task) return ''
+  return task.error_message || task.error || ''
+}
+
 async function load() {
   loading.value = true
   try {
@@ -154,11 +159,23 @@ onMounted(load)
           <template #default="{ row }">
             <div class="task-main">
               <span class="task-id">{{ row.task_id }}</span>
-              <el-tag :type="statusTag(row.status)" size="small" effect="plain">
+              <el-tooltip
+                v-if="row.status === 'failed' && taskErrorText(row)"
+                :content="taskErrorText(row)"
+                placement="top"
+              >
+                <el-tag :type="statusTag(row.status)" size="small" effect="plain">
+                  {{ statusLabel(row.status) }}
+                </el-tag>
+              </el-tooltip>
+              <el-tag v-else :type="statusTag(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </el-tag>
             </div>
             <div class="prompt" :title="row.prompt">{{ row.prompt }}</div>
+            <div v-if="row.status === 'failed' && taskErrorText(row)" class="task-error">
+              {{ taskErrorText(row) }}
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="规格" width="130">
@@ -241,6 +258,16 @@ onMounted(load)
             <el-descriptions-item v-if="current.error" label="错误" :span="2">
               <el-tag type="danger" effect="plain">{{ formatErrorCode(current.error) }}</el-tag>
               <span class="error-raw">{{ current.error }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item v-if="current.error_message" label="上游返回" :span="2">
+              <div class="upstream-text">{{ current.error_message }}</div>
+              <el-button
+                size="small"
+                class="copy-upstream"
+                @click="copyText(current.error_message)"
+              >
+                复制文本
+              </el-button>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -339,6 +366,15 @@ onMounted(load)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.task-error {
+  max-width: 720px;
+  margin-top: 4px;
+  color: var(--el-color-danger);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 12px;
@@ -380,6 +416,14 @@ onMounted(load)
 .error-raw {
   margin-left: 8px;
   color: var(--el-text-color-secondary);
+}
+.upstream-text {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  color: var(--el-text-color-primary);
+}
+.copy-upstream {
+  margin-top: 8px;
 }
 .section + .section {
   margin-top: 18px;

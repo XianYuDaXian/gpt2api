@@ -83,12 +83,12 @@ func (d *DAO) UpdateCost(ctx context.Context, taskID string, cost int64) error {
 	return err
 }
 
-// MarkFailed 更新失败状态(带错误码)。
-func (d *DAO) MarkFailed(ctx context.Context, taskID, errorCode string) error {
+// MarkFailed 更新失败状态,同时保存错误码和可展示的上游错误文本。
+func (d *DAO) MarkFailed(ctx context.Context, taskID, errorCode, errorMessage string) error {
 	_, err := d.db.ExecContext(ctx, `
 UPDATE image_tasks
-   SET status='failed', error=?, finished_at=NOW()
- WHERE task_id=?`, truncate(errorCode, 500), taskID)
+   SET status='failed', error=?, error_message=?, finished_at=NOW()
+ WHERE task_id=?`, truncate(errorCode, 500), truncate(errorMessage, 1000), taskID)
 	return err
 }
 
@@ -100,7 +100,7 @@ func (d *DAO) MarkStaleActiveFailed(ctx context.Context, olderThan time.Duration
 	}
 	res, err := d.db.ExecContext(ctx, `
 UPDATE image_tasks
-   SET status='failed', error='interrupted', finished_at=NOW()
+   SET status='failed', error='interrupted', error_message='任务被服务重启或异常退出中断', finished_at=NOW()
  WHERE status IN ('queued','dispatched','running')
    AND COALESCE(started_at, created_at) < DATE_SUB(NOW(), INTERVAL ? SECOND)`, seconds)
 	if err != nil {
@@ -126,7 +126,7 @@ func (d *DAO) Get(ctx context.Context, taskID string) (*Task, error) {
 	var t Task
 	err := d.db.GetContext(ctx, &t, `
 SELECT id, task_id, user_id, key_id, model_id, account_id, prompt, n, size, status,
-       conversation_id, file_ids, result_urls, error, estimated_credit, credit_cost,
+       conversation_id, file_ids, result_urls, error, error_message, estimated_credit, credit_cost,
        created_at, started_at, finished_at
   FROM image_tasks
  WHERE task_id = ?`, taskID)
@@ -147,7 +147,7 @@ func (d *DAO) ListByUser(ctx context.Context, userID uint64, limit, offset int) 
 	var out []Task
 	err := d.db.SelectContext(ctx, &out, `
 SELECT id, task_id, user_id, key_id, model_id, account_id, prompt, n, size, status,
-       conversation_id, file_ids, result_urls, error, estimated_credit, credit_cost,
+       conversation_id, file_ids, result_urls, error, error_message, estimated_credit, credit_cost,
        created_at, started_at, finished_at
   FROM image_tasks
  WHERE user_id = ?

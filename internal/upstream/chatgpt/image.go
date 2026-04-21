@@ -310,6 +310,10 @@ type ImageSSEResult struct {
 	ContentPolicyBlocked bool
 }
 
+func (r ImageSSEResult) TextOnly() bool {
+	return strings.TrimSpace(r.Text) != "" && len(r.FileIDs) == 0 && len(r.SedimentIDs) == 0
+}
+
 var (
 	reFileRef = regexp.MustCompile(`file-service://([A-Za-z0-9_-]+)`)
 	reSedRef  = regexp.MustCompile(`sediment://([A-Za-z0-9_-]+)`)
@@ -321,6 +325,7 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 	var r ImageSSEResult
 	seenFile := map[string]struct{}{}
 	seenSed := map[string]struct{}{}
+	var textX imageSSETextExtractor
 
 	for ev := range stream {
 		if ev.Err != nil {
@@ -353,17 +358,17 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 		if err := json.Unmarshal(data, &obj); err != nil {
 			continue
 		}
+		if delta := textX.Extract(obj); delta != "" {
+			r.Text += delta
+			if isImageContentPolicyText(r.Text) {
+				r.ContentPolicyBlocked = true
+			}
+		}
 		if v, ok := obj["v"].(map[string]interface{}); ok {
 			if cid, ok := v["conversation_id"].(string); ok && cid != "" && r.ConversationID == "" {
 				r.ConversationID = cid
 			}
 			if msg, ok := v["message"].(map[string]interface{}); ok {
-				if content, ok := msg["content"].(map[string]interface{}); ok {
-					r.Text += extractTextParts(content)
-					if isImageContentPolicyText(r.Text) {
-						r.ContentPolicyBlocked = true
-					}
-				}
 				if meta, ok := msg["metadata"].(map[string]interface{}); ok {
 					if tid, ok := meta["image_gen_task_id"].(string); ok {
 						r.ImageGenTaskID = tid
@@ -378,6 +383,139 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 		}
 	}
 	return r
+}
+
+type imageSSETextExtractor struct {
+	curP      string
+	role      string
+	recipient string
+	lastFull  string
+}
+
+func (d *imageSSETextExtractor) Extract(raw map[string]interface{}) string {
+	if d.recipient == "" {
+		d.recipient = "all"
+	}
+	if p, ok := raw["p"].(string); ok {
+		d.curP = p
+	}
+	if strings.HasPrefix(d.curP, "/message/content/thoughts") {
+		return ""
+	}
+	v, ok := raw["v"]
+	if !ok {
+		return d.extractLegacyMessage(raw)
+	}
+	switch vv := v.(type) {
+	case string:
+		return d.extractPatchString(d.curP, "", vv)
+	case []interface{}:
+		var b strings.Builder
+		for _, item := range vv {
+			m, _ := item.(map[string]interface{})
+			if m == nil {
+				continue
+			}
+			if p, _ := m["p"].(string); p != "" {
+				d.curP = p
+			}
+			if strings.HasPrefix(d.curP, "/message/content/thoughts") {
+				continue
+			}
+			op, _ := m["o"].(string)
+			if s, ok := m["v"].(string); ok {
+				b.WriteString(d.extractPatchString(d.curP, op, s))
+			}
+		}
+		return b.String()
+	case map[string]interface{}:
+		return d.extractVObject(vv)
+	default:
+		return d.extractLegacyMessage(raw)
+	}
+}
+
+func (d *imageSSETextExtractor) extractVObject(v map[string]interface{}) string {
+	msg, _ := v["message"].(map[string]interface{})
+	if msg == nil {
+		return ""
+	}
+	if role := messageAuthorRole(msg); role != "" {
+		d.role = role
+	}
+	if r, ok := msg["recipient"].(string); ok && r != "" {
+		d.recipient = r
+	}
+	content, _ := msg["content"].(map[string]interface{})
+	if content == nil || !d.isAssistantUserVisible() {
+		return ""
+	}
+	cur := extractTextParts(content)
+	if cur == "" {
+		return ""
+	}
+	delta := cur
+	if strings.HasPrefix(cur, d.lastFull) {
+		delta = cur[len(d.lastFull):]
+	}
+	d.lastFull = cur
+	return delta
+}
+
+func (d *imageSSETextExtractor) extractLegacyMessage(raw map[string]interface{}) string {
+	msg, _ := raw["message"].(map[string]interface{})
+	if msg == nil {
+		return ""
+	}
+	if role := messageAuthorRole(msg); role != "" {
+		d.role = role
+	}
+	if r, ok := msg["recipient"].(string); ok && r != "" {
+		d.recipient = r
+	}
+	content, _ := msg["content"].(map[string]interface{})
+	if content == nil || !d.isAssistantUserVisible() {
+		return ""
+	}
+	cur := extractTextParts(content)
+	if cur == "" {
+		return ""
+	}
+	delta := cur
+	if strings.HasPrefix(cur, d.lastFull) {
+		delta = cur[len(d.lastFull):]
+	}
+	d.lastFull = cur
+	return delta
+}
+
+func (d *imageSSETextExtractor) extractPatchString(path, op, value string) string {
+	if !d.isAssistantUserVisible() {
+		return ""
+	}
+	if op != "" && op != "append" {
+		return ""
+	}
+	if path == "" || path == "/message/content/parts/0" {
+		return value
+	}
+	return ""
+}
+
+func (d *imageSSETextExtractor) isAssistantUserVisible() bool {
+	if d.role == "user" || d.role == "tool" {
+		return false
+	}
+	return d.recipient == "" || d.recipient == "all"
+}
+
+func messageAuthorRole(msg map[string]interface{}) string {
+	author, _ := msg["author"].(map[string]interface{})
+	if author == nil {
+		return ""
+	}
+	role, _ := author["role"].(string)
+	return strings.ToLower(strings.TrimSpace(role))
 }
 
 func extractTextParts(content map[string]interface{}) string {
@@ -421,6 +559,14 @@ type ImageToolMsg struct {
 	SedimentIDs   []string // sediment
 }
 
+// AssistantText 是 conversation.mapping 中最新 assistant 文本消息。
+type AssistantText struct {
+	MessageID  string
+	Text       string
+	CreateTime float64
+	FinishType string
+}
+
 // GetConversationMapping 读取会话全量 mapping(轮询用)。
 func (c *Client) GetConversationMapping(ctx context.Context, convID string) (map[string]interface{}, error) {
 	if convID == "" {
@@ -448,6 +594,78 @@ func (c *Client) GetConversationMapping(ctx context.Context, convID string) (map
 		return nil, fmt.Errorf("decode conversation: %w", err)
 	}
 	return out, nil
+}
+
+// LatestAssistantText 从 conversation 全量响应中提取当前分支最新的 assistant 文本。
+func LatestAssistantText(full map[string]interface{}) AssistantText {
+	mapping, _ := full["mapping"].(map[string]interface{})
+	if mapping == nil {
+		return AssistantText{}
+	}
+
+	// 优先沿 current_node 回溯,这比按 map 遍历或时间排序更贴近当前对话分支。
+	if cur, _ := full["current_node"].(string); cur != "" {
+		seen := map[string]struct{}{}
+		for cur != "" {
+			if _, ok := seen[cur]; ok {
+				break
+			}
+			seen[cur] = struct{}{}
+			node, _ := mapping[cur].(map[string]interface{})
+			if node == nil {
+				break
+			}
+			if out := assistantTextFromNode(cur, node); out.Text != "" {
+				return out
+			}
+			parent, _ := node["parent"].(string)
+			cur = parent
+		}
+	}
+
+	// 兼容没有 current_node 的响应,按 create_time 取最新 assistant 文本。
+	var latest AssistantText
+	for mid, raw := range mapping {
+		node, _ := raw.(map[string]interface{})
+		if node == nil {
+			continue
+		}
+		out := assistantTextFromNode(mid, node)
+		if out.Text == "" {
+			continue
+		}
+		if latest.Text == "" || out.CreateTime >= latest.CreateTime {
+			latest = out
+		}
+	}
+	return latest
+}
+
+func assistantTextFromNode(messageID string, node map[string]interface{}) AssistantText {
+	msg, _ := node["message"].(map[string]interface{})
+	if msg == nil || messageAuthorRole(msg) != "assistant" {
+		return AssistantText{}
+	}
+	content, _ := msg["content"].(map[string]interface{})
+	if content == nil {
+		return AssistantText{}
+	}
+	text := strings.TrimSpace(extractTextParts(content))
+	if text == "" {
+		return AssistantText{}
+	}
+	out := AssistantText{MessageID: messageID, Text: text}
+	if v, ok := msg["create_time"].(float64); ok {
+		out.CreateTime = v
+	}
+	if meta, _ := msg["metadata"].(map[string]interface{}); meta != nil {
+		if fd, _ := meta["finish_details"].(map[string]interface{}); fd != nil {
+			if ft, _ := fd["type"].(string); ft != "" {
+				out.FinishType = ft
+			}
+		}
+	}
+	return out
 }
 
 // ArchiveConversation 把 chatgpt.com 上游会话设置为归档。

@@ -156,7 +156,7 @@ func (r *Runner) Run(ctx context.Context, opt RunOptions) *RunResult {
 			_ = r.dao.MarkSuccess(persistCtx, opt.TaskID, result.ConversationID,
 				result.FileIDs, result.SignedURLs, 0 /* credit_cost 由网关负责写 */)
 		} else {
-			_ = r.dao.MarkFailed(persistCtx, opt.TaskID, result.ErrorCode)
+			_ = r.dao.MarkFailed(persistCtx, opt.TaskID, result.ErrorCode, result.ErrorMessage)
 		}
 	}
 	return result
@@ -379,6 +379,31 @@ loop:
 			zap.Int("sse_sids", len(sseResult.SedimentIDs)),
 			zap.Strings("sse_sids_list", sseResult.SedimentIDs),
 		)
+		if sseResult.TextOnly() {
+			if sseResult.ContentPolicyBlocked {
+				return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
+			}
+			return false, ErrTextResponse, errors.New(truncateSSEText(sseResult.Text, 500))
+		}
+		if len(sseResult.FileIDs) == 0 && len(sseResult.SedimentIDs) == 0 && convID != "" {
+			if full, merr := cli.GetConversationMapping(ctx, convID); merr == nil {
+				if mapping, _ := full["mapping"].(map[string]interface{}); len(chatgpt.ExtractImageToolMsgs(mapping)) == 0 {
+					if text := chatgpt.LatestAssistantText(full); text.Text != "" {
+						logger.L().Info("image runner assistant text fallback",
+							zap.String("task_id", opt.TaskID),
+							zap.Uint64("account_id", lease.Account.ID),
+							zap.Int("turn", turn),
+							zap.String("conv_id", convID),
+							zap.String("finish_type", text.FinishType),
+							zap.Int("text_len", len(text.Text)))
+						return false, ErrTextResponse, errors.New(truncateSSEText(text.Text, 500))
+					}
+				}
+			} else {
+				logger.L().Warn("image runner fetch mapping for text fallback failed",
+					zap.Uint64("account_id", lease.Account.ID), zap.Error(merr))
+			}
+		}
 		if sseResult.ContentPolicyBlocked && len(sseResult.FileIDs) == 0 && len(sseResult.SedimentIDs) == 0 {
 			return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
 		}
