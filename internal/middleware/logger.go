@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,9 @@ func AccessLog() gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 		cost := time.Since(start)
+		if shouldSkipAccessLog(c.Request.URL.Path) {
+			return
+		}
 
 		log := logger.L()
 		fields := []zap.Field{
@@ -46,6 +50,19 @@ func AccessLog() gin.HandlerFunc {
 		default:
 			log.Info("http", fields...)
 		}
+	}
+}
+
+func shouldSkipAccessLog(path string) bool {
+	switch {
+	case path == "/":
+		return true
+	case path == "/favicon.svg":
+		return true
+	case strings.HasPrefix(path, "/assets/"):
+		return true
+	default:
+		return false
 	}
 }
 

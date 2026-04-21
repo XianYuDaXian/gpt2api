@@ -4,9 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,10 +61,10 @@ func VerifySig(taskID string, idx int, expMs int64, sig string) bool {
 	return hmac.Equal([]byte(sig), []byte(want))
 }
 
-// CachePaths 返回缓存图片和元数据文件路径。
+// CachePaths 返回默认缓存图片和元数据文件路径。
 func CachePaths(cacheDir, taskID string, idx int) (imgPath, metaPath string) {
 	base := filepath.Join(strings.TrimSpace(cacheDir), taskID, fmt.Sprintf("%d", idx))
-	return base + ".bin", base + ".meta.json"
+	return base + ".png", base + ".meta.json"
 }
 
 type cacheMeta struct {
@@ -73,15 +74,8 @@ type cacheMeta struct {
 
 // LoadCache 从磁盘读取缓存图片。
 func LoadCache(cacheDir, taskID string, idx int) ([]byte, string, bool, error) {
-	imgPath, metaPath := CachePaths(cacheDir, taskID, idx)
-	body, err := os.ReadFile(imgPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, "", false, nil
-		}
-		return nil, "", false, err
-	}
 	ct := ""
+	_, metaPath := CachePaths(cacheDir, taskID, idx)
 	if metaBytes, err := os.ReadFile(metaPath); err == nil {
 		var meta cacheMeta
 		if json.Unmarshal(metaBytes, &meta) == nil {
@@ -91,7 +85,83 @@ func LoadCache(cacheDir, taskID string, idx int) ([]byte, string, bool, error) {
 	if ct == "" {
 		ct = "image/png"
 	}
-	return body, ct, true, nil
+	var lastErr error
+	for _, imgPath := range cacheImageCandidates(cacheDir, taskID, idx, ct) {
+		body, err := os.ReadFile(imgPath)
+		if err == nil {
+			return body, ct, true, nil
+		}
+		if !os.IsNotExist(err) {
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		return nil, "", false, lastErr
+	}
+	return nil, "", false, nil
+}
+
+func cacheImageCandidates(cacheDir, taskID string, idx int, contentType string) []string {
+	base := filepath.Join(strings.TrimSpace(cacheDir), taskID, fmt.Sprintf("%d", idx))
+	ext := imageExt(contentType)
+	out := []string{base + ext}
+	// 兼容旧版本缓存文件。
+	if ext != ".bin" {
+		out = append(out, base+".bin")
+	}
+	for _, fallback := range []string{".png", ".jpg", ".jpeg", ".webp", ".gif"} {
+		p := base + fallback
+		exists := false
+		for _, cur := range out {
+			if cur == p {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func cacheImagePath(cacheDir, taskID string, idx int, contentType string) string {
+	base := filepath.Join(strings.TrimSpace(cacheDir), taskID, fmt.Sprintf("%d", idx))
+	return base + imageExt(contentType)
+}
+
+func imageExt(contentType string) string {
+	ct := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch ct {
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	case "image/png":
+		return ".png"
+	default:
+		return ".png"
+	}
+}
+
+func normalizeImageContentType(contentType string, body []byte) string {
+	ct := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch ct {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return ct
+	case "image/jpg":
+		return "image/jpeg"
+	}
+	if len(body) > 0 {
+		sniff := strings.ToLower(strings.TrimSpace(strings.Split(http.DetectContentType(body), ";")[0]))
+		switch sniff {
+		case "image/png", "image/jpeg", "image/webp", "image/gif":
+			return sniff
+		}
+	}
+	return "image/png"
 }
 
 // StoreCache 写入磁盘缓存图片。
@@ -99,7 +169,9 @@ func StoreCache(cacheDir, taskID string, idx int, body []byte, contentType strin
 	if strings.TrimSpace(cacheDir) == "" || len(body) == 0 {
 		return nil
 	}
-	imgPath, metaPath := CachePaths(cacheDir, taskID, idx)
+	contentType = normalizeImageContentType(contentType, body)
+	imgPath := cacheImagePath(cacheDir, taskID, idx, contentType)
+	_, metaPath := CachePaths(cacheDir, taskID, idx)
 	if err := os.MkdirAll(filepath.Dir(imgPath), 0o750); err != nil {
 		return err
 	}
@@ -111,9 +183,6 @@ func StoreCache(cacheDir, taskID string, idx int, body []byte, contentType strin
 	if err := os.Rename(tmpImg, imgPath); err != nil {
 		_ = os.Remove(tmpImg)
 		return err
-	}
-	if strings.TrimSpace(contentType) == "" {
-		contentType = "image/png"
 	}
 	meta := cacheMeta{ContentType: contentType, StoredAt: time.Now()}
 	metaBytes, _ := json.Marshal(meta)

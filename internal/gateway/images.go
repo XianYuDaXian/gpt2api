@@ -558,6 +558,8 @@ func localizeImageErr(code, raw string) string {
 		zh = "上游风控,请稍后再试"
 	case image.ErrPreviewOnly:
 		zh = "上游仅返回预览,请稍后重试(已尝试切换账号)"
+	case image.ErrContentPolicy:
+		zh = "上游内容策略拒绝生成,已自动重试仍未成功。请修改提示词后再试"
 	case image.ErrUnknown, "":
 		zh = "图片生成失败"
 	case "upstream_error":

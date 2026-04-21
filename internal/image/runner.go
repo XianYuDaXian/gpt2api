@@ -23,13 +23,24 @@ import (
 //
 // 灰度桶未命中(preview_only)会自动换账号重试。
 type Runner struct {
-	sched *scheduler.Scheduler
-	dao   *DAO
+	sched          *scheduler.Scheduler
+	dao            *DAO
+	cookieResolver CookieResolver
 }
 
 // NewRunner 构造 Runner。
 func NewRunner(sched *scheduler.Scheduler, dao *DAO) *Runner {
 	return &Runner{sched: sched, dao: dao}
+}
+
+// CookieResolver 按账号读取浏览器 Cookie。
+type CookieResolver interface {
+	DecryptCookies(ctx context.Context, accountID uint64) (string, error)
+}
+
+// SetCookieResolver 注入账号 Cookie 解析器。
+func (r *Runner) SetCookieResolver(resolver CookieResolver) {
+	r.cookieResolver = resolver
 }
 
 // ReferenceImage 是图生图/编辑的一张参考图输入。
@@ -125,12 +136,13 @@ func (r *Runner) Run(ctx context.Context, opt RunOptions) *RunResult {
 		}
 		result.ErrorCode = status
 
-		// preview_only:换账号重试;其他错误直接退出
-		if status != ErrPreviewOnly {
+		if !isRetryableImageFailure(status) {
 			break
 		}
-		logger.L().Info("image runner preview_only, retry with another account",
-			zap.String("task_id", opt.TaskID), zap.Int("attempt", attempt))
+		logger.L().Info("image runner retryable failure, retry with another account",
+			zap.String("task_id", opt.TaskID),
+			zap.Int("attempt", attempt),
+			zap.String("status", status))
 	}
 
 	result.DurationMs = time.Since(start).Milliseconds()
@@ -172,12 +184,18 @@ func (r *Runner) runOnce(ctx context.Context, opt RunOptions, result *RunResult)
 	}
 
 	// 2) 构造上游 client
+	cookies, err := r.resolveCookies(ctx, lease.Account.ID)
+	if err != nil {
+		logger.L().Warn("image runner resolve cookies failed",
+			zap.Uint64("account_id", lease.Account.ID),
+			zap.Error(err))
+	}
 	cli, err := chatgpt.New(chatgpt.Options{
 		AuthToken: lease.AuthToken,
 		DeviceID:  lease.DeviceID,
 		SessionID: lease.SessionID,
 		ProxyURL:  lease.ProxyURL,
-		Cookies:   "", // 目前不从 oai_account_cookies 加载,后续 M3+ 再做
+		Cookies:   cookies,
 	})
 	if err != nil {
 		return false, ErrUnknown, fmt.Errorf("chatgpt client: %w", err)
@@ -354,12 +372,16 @@ loop:
 			zap.Int("turn", turn),
 			zap.String("conv_id", convID),
 			zap.String("finish_type", sseResult.FinishType),
+			zap.Bool("content_policy_blocked", sseResult.ContentPolicyBlocked),
 			zap.String("image_gen_task_id", sseResult.ImageGenTaskID),
 			zap.Int("sse_fids", len(sseResult.FileIDs)),
 			zap.Strings("sse_fids_list", sseResult.FileIDs),
 			zap.Int("sse_sids", len(sseResult.SedimentIDs)),
 			zap.Strings("sse_sids_list", sseResult.SedimentIDs),
 		)
+		if sseResult.ContentPolicyBlocked && len(sseResult.FileIDs) == 0 && len(sseResult.SedimentIDs) == 0 {
+			return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
+		}
 
 		// SSE 直出 file-service = IMG2 命中。
 		// 注意:同一次灰度也可能同时带 sediment(例如 preview + final 各一张),
@@ -384,6 +406,9 @@ loop:
 		pollOpt := chatgpt.PollOpts{
 			MaxWait:         opt.PollMaxWait,
 			BaselineToolIDs: baselineTools,
+			Interval:        2 * time.Second,
+			StableRounds:    2,
+			PreviewWait:     15 * time.Second,
 		}
 		status, fids, sids := cli.PollConversationForImages(ctx, convID, pollOpt)
 		// 每轮 Poll 的产物,无论 status 如何都打印一条,用于诊断"第几轮拿到了什么"。
@@ -581,6 +606,33 @@ func (r *Runner) classifyUpstream(err error) string {
 		return ErrPollTimeout
 	}
 	return ErrUpstream
+}
+
+func isRetryableImageFailure(status string) bool {
+	switch status {
+	case ErrPreviewOnly, ErrContentPolicy:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Runner) resolveCookies(ctx context.Context, accountID uint64) (string, error) {
+	if r.cookieResolver == nil {
+		return "", nil
+	}
+	return r.cookieResolver.DecryptCookies(ctx, accountID)
+}
+
+func truncateSSEText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "content policy blocked"
+	}
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // GenerateTaskID 生成对外 task_id。

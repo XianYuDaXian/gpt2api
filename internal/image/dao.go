@@ -92,6 +92,35 @@ UPDATE image_tasks
 	return err
 }
 
+// MarkStaleActiveFailed 把异常中断遗留的活动任务标记为失败。
+func (d *DAO) MarkStaleActiveFailed(ctx context.Context, olderThan time.Duration) (int64, error) {
+	seconds := int(olderThan.Seconds())
+	if seconds <= 0 {
+		seconds = int((10 * time.Minute).Seconds())
+	}
+	res, err := d.db.ExecContext(ctx, `
+UPDATE image_tasks
+   SET status='failed', error='interrupted', finished_at=NOW()
+ WHERE status IN ('queued','dispatched','running')
+   AND COALESCE(started_at, created_at) < DATE_SUB(NOW(), INTERVAL ? SECOND)`, seconds)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// CleanupFailedByUser 清理当前用户可见的失败任务。
+func (d *DAO) CleanupFailedByUser(ctx context.Context, userID uint64) (int64, error) {
+	res, err := d.db.ExecContext(ctx,
+		`DELETE FROM image_tasks WHERE user_id = ? AND status = 'failed'`, userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 // Get 根据对外 task_id 查询。
 func (d *DAO) Get(ctx context.Context, taskID string) (*Task, error) {
 	var t Task

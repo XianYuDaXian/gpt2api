@@ -141,3 +141,22 @@ func (h *MeHandler) Get(c *gin.Context) {
 	}
 	resp.OK(c, h.viewOf(t))
 }
+
+// DELETE /api/me/images/tasks/failed
+func (h *MeHandler) CleanupFailed(c *gin.Context) {
+	uid := middleware.UserID(c)
+	if uid == 0 {
+		resp.Unauthorized(c, "not logged in")
+		return
+	}
+	if _, err := h.dao.MarkStaleActiveFailed(c.Request.Context(), 10*time.Minute); err != nil {
+		resp.Internal(c, err.Error())
+		return
+	}
+	deleted, err := h.dao.CleanupFailedByUser(c.Request.Context(), uid)
+	if err != nil {
+		resp.Internal(c, err.Error())
+		return
+	}
+	resp.OK(c, gin.H{"deleted": deleted})
+}

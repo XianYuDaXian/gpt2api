@@ -33,6 +33,7 @@ const (
 	ErrPOWFailed       = "pow_failed"
 	ErrTurnstile       = "turnstile_required"
 	ErrUpstream        = "upstream_error"
+	ErrContentPolicy   = "content_policy"
 	ErrPreviewOnly     = "preview_only" // 非灰度桶,未产出 IMG2 终稿
 	ErrPollTimeout     = "poll_timeout"
 	ErrDownload        = "download_failed"
@@ -41,42 +42,42 @@ const (
 
 // Task 对应 image_tasks 表。
 type Task struct {
-	ID              uint64    `db:"id"`
-	TaskID          string    `db:"task_id"` // 对外 id:img_xxx
-	UserID          uint64    `db:"user_id"`
-	KeyID           uint64    `db:"key_id"`
-	ModelID         uint64    `db:"model_id"`
-	AccountID       uint64    `db:"account_id"`
-	Prompt          string    `db:"prompt"`
-	N               int       `db:"n"`
-	Size            string    `db:"size"`
-	Status          string    `db:"status"`
-	ConversationID  string    `db:"conversation_id"`
-	FileIDs         []byte    `db:"file_ids"`    // JSON 数组字符串
-	ResultURLs      []byte    `db:"result_urls"` // JSON 数组字符串(签名 URL)
-	Error           string    `db:"error"`
-	EstimatedCredit int64     `db:"estimated_credit"`
-	CreditCost      int64     `db:"credit_cost"`
-	CreatedAt       time.Time `db:"created_at"`
+	ID              uint64     `db:"id"`
+	TaskID          string     `db:"task_id"` // 对外 id:img_xxx
+	UserID          uint64     `db:"user_id"`
+	KeyID           uint64     `db:"key_id"`
+	ModelID         uint64     `db:"model_id"`
+	AccountID       uint64     `db:"account_id"`
+	Prompt          string     `db:"prompt"`
+	N               int        `db:"n"`
+	Size            string     `db:"size"`
+	Status          string     `db:"status"`
+	ConversationID  string     `db:"conversation_id"`
+	FileIDs         []byte     `db:"file_ids"`    // JSON 数组字符串
+	ResultURLs      []byte     `db:"result_urls"` // JSON 数组字符串(签名 URL)
+	Error           string     `db:"error"`
+	EstimatedCredit int64      `db:"estimated_credit"`
+	CreditCost      int64      `db:"credit_cost"`
+	CreatedAt       time.Time  `db:"created_at"`
 	StartedAt       *time.Time `db:"started_at"`
 	FinishedAt      *time.Time `db:"finished_at"`
 }
 
 // Result 是 Runner 返回给网关/客户端的生图结果。
 type Result struct {
-	TaskID         string         `json:"task_id"`
-	Status         string         `json:"status"`
-	ConversationID string         `json:"conversation_id,omitempty"`
-	Images         []ResultImage  `json:"images,omitempty"`
-	ErrorCode      string         `json:"error_code,omitempty"`
-	ErrorMessage   string         `json:"error_message,omitempty"`
-	CreditCost     int64          `json:"credit_cost"`
+	TaskID         string        `json:"task_id"`
+	Status         string        `json:"status"`
+	ConversationID string        `json:"conversation_id,omitempty"`
+	Images         []ResultImage `json:"images,omitempty"`
+	ErrorCode      string        `json:"error_code,omitempty"`
+	ErrorMessage   string        `json:"error_message,omitempty"`
+	CreditCost     int64         `json:"credit_cost"`
 }
 
 // ResultImage 单张生图。
 type ResultImage struct {
-	URL         string `json:"url"`          // 上游签名直链(短期有效,通常 15 分钟)
-	FileID      string `json:"file_id"`      // chatgpt.com file-service id(纯 id,不含 sed:)
+	URL         string `json:"url"`     // 上游签名直链(短期有效,通常 15 分钟)
+	FileID      string `json:"file_id"` // chatgpt.com file-service id(纯 id,不含 sed:)
 	IsSediment  bool   `json:"is_sediment,omitempty"`
 	ContentType string `json:"content_type,omitempty"`
 }

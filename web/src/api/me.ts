@@ -155,6 +155,10 @@ export function getMyImageTask(taskID: string): Promise<ImageTask> {
   return http.get(`/api/me/images/tasks/${taskID}`)
 }
 
+export function cleanupFailedImageTasks(): Promise<{ deleted: number }> {
+  return http.delete('/api/me/images/tasks/failed')
+}
+
 // ===============================================================
 // 在线体验(Playground)—— JWT 鉴权,内部代挂 __playground__ key
 // ===============================================================

@@ -142,11 +142,17 @@ func main() {
 	}
 
 	imageDAO := image.NewDAO(sqldb)
+	if n, err := imageDAO.MarkStaleActiveFailed(context.Background(), 10*time.Minute); err != nil {
+		log.Warn("cleanup stale image tasks failed", zap.Error(err))
+	} else if n > 0 {
+		log.Info("cleanup stale image tasks", zap.Int64("count", n))
+	}
 	imageRunner := image.NewRunner(sched, imageDAO)
+	imageRunner.SetCookieResolver(accSvc)
 	imagesH := &gateway.ImagesHandler{
-		Handler: gwH,
-		Runner:  imageRunner,
-		DAO:     imageDAO,
+		Handler:  gwH,
+		Runner:   imageRunner,
+		DAO:      imageDAO,
 		CacheDir: cfg.ImageCache.Dir,
 	}
 	gwH.Images = imagesH // chat/completions 识别到图像模型时转派

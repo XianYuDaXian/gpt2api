@@ -10,6 +10,7 @@ const siteStore = useSiteStore()
 const apiBaseURL = computed(() => siteStore.apiBaseURL())
 
 const loading = ref(false)
+const cleanupLoading = ref(false)
 const items = ref<meApi.ImageTask[]>([])
 const total = ref(0)
 const filter = reactive({
@@ -64,6 +65,17 @@ function refresh() {
   load()
 }
 
+async function cleanupFailed() {
+  cleanupLoading.value = true
+  try {
+    const res = await meApi.cleanupFailedImageTasks()
+    ElMessage.success(`已清理 ${res.deleted || 0} 条失败记录`)
+    refresh()
+  } finally {
+    cleanupLoading.value = false
+  }
+}
+
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const current = ref<meApi.ImageTask | null>(null)
@@ -103,6 +115,9 @@ onMounted(load)
         </div>
       </div>
       <div class="hero-actions">
+        <el-button type="danger" plain :loading="cleanupLoading" @click="cleanupFailed">
+          清理失败记录
+        </el-button>
         <el-button type="primary" :loading="loading" @click="refresh">
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>

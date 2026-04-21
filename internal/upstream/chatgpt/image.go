@@ -301,11 +301,13 @@ func (c *Client) StreamFConversation(ctx context.Context, opt ImageConvOpts) (<-
 
 // ImageSSEResult 是 ParseImageSSE 的扫描结果。
 type ImageSSEResult struct {
-	ConversationID string   // SSE 里捕获到的新会话 id(可能和入参不同)
-	FileIDs        []string // file-service:// 引用(直出灰度图就在这里)
-	SedimentIDs    []string // sediment:// 引用(通常是预览,需要轮询)
-	FinishType     string   // finish_details.type(interrupted/stop/...)
-	ImageGenTaskID string
+	ConversationID       string   // SSE 里捕获到的新会话 id(可能和入参不同)
+	FileIDs              []string // file-service:// 引用(直出灰度图就在这里)
+	SedimentIDs          []string // sediment:// 引用(通常是预览,需要轮询)
+	FinishType           string   // finish_details.type(interrupted/stop/...)
+	ImageGenTaskID       string
+	Text                 string
+	ContentPolicyBlocked bool
 }
 
 var (
@@ -356,6 +358,12 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 				r.ConversationID = cid
 			}
 			if msg, ok := v["message"].(map[string]interface{}); ok {
+				if content, ok := msg["content"].(map[string]interface{}); ok {
+					r.Text += extractTextParts(content)
+					if isImageContentPolicyText(r.Text) {
+						r.ContentPolicyBlocked = true
+					}
+				}
 				if meta, ok := msg["metadata"].(map[string]interface{}); ok {
 					if tid, ok := meta["image_gen_task_id"].(string); ok {
 						r.ImageGenTaskID = tid
@@ -370,6 +378,35 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 		}
 	}
 	return r
+}
+
+func extractTextParts(content map[string]interface{}) string {
+	parts, _ := content["parts"].([]interface{})
+	if len(parts) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range parts {
+		if s, ok := p.(string); ok {
+			b.WriteString(s)
+		}
+	}
+	return b.String()
+}
+
+func isImageContentPolicyText(text string) bool {
+	s := strings.ToLower(text)
+	keywords := []string{
+		"violat", "content policy", "policy", "safety", "moderation",
+		"third-party content", "similarity",
+		"违反", "内容", "防护限制", "第三方", "相似性", "请重试", "修改提示语",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // ImageToolMsg 是 conversation.mapping 里一条 IMG2 tool 消息的关键字段。

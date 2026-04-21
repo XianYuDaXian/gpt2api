@@ -31,19 +31,19 @@ type Deps struct {
 	AuthH *auth.Handler
 	UserH *user.Handler
 
-	KeySvc     *apikey.Service
-	KeyH       *apikey.Handler
-	ProxyH     *proxy.Handler
-	AccountH   *account.Handler
+	KeySvc   *apikey.Service
+	KeyH     *apikey.Handler
+	ProxyH   *proxy.Handler
+	AccountH *account.Handler
 
 	GatewayH *gateway.Handler
 	ImagesH  *gateway.ImagesHandler
 
-	BackupH      *backup.Handler
-	AuditH       *audit.Handler
-	AuditDAO     *audit.DAO
-	AdminUserH   *user.AdminHandler
-	AdminGroupH  *user.AdminGroupHandler
+	BackupH     *backup.Handler
+	AuditH      *audit.Handler
+	AuditDAO    *audit.DAO
+	AdminUserH  *user.AdminHandler
+	AdminGroupH *user.AdminGroupHandler
 
 	AdminModelH *model.AdminHandler
 	AdminKeyH   *apikey.AdminHandler
@@ -126,6 +126,7 @@ func New(d *Deps) *gin.Engine {
 				ig := authed.Group("/me/images", middleware.RequirePerm(rbac.PermSelfImage))
 				{
 					ig.GET("/tasks", d.MeImageH.List)
+					ig.DELETE("/tasks/failed", d.MeImageH.CleanupFailed)
 					ig.GET("/tasks/:id", d.MeImageH.Get)
 				}
 			}
