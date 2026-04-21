@@ -9,19 +9,19 @@ import (
 )
 
 type Config struct {
-	App       AppConfig       `mapstructure:"app"`
-	Log       LogConfig       `mapstructure:"log"`
-	MySQL     MySQLConfig     `mapstructure:"mysql"`
-	Redis     RedisConfig     `mapstructure:"redis"`
-	JWT       JWTConfig       `mapstructure:"jwt"`
-	Crypto    CryptoConfig    `mapstructure:"crypto"`
-	Security  SecurityConfig  `mapstructure:"security"`
-	Scheduler SchedulerConfig `mapstructure:"scheduler"`
-	Upstream  UpstreamConfig  `mapstructure:"upstream"`
-	EPay      EPayConfig      `mapstructure:"epay"`
-	Backup    BackupConfig    `mapstructure:"backup"`
+	App        AppConfig        `mapstructure:"app"`
+	Log        LogConfig        `mapstructure:"log"`
+	MySQL      MySQLConfig      `mapstructure:"mysql"`
+	Redis      RedisConfig      `mapstructure:"redis"`
+	JWT        JWTConfig        `mapstructure:"jwt"`
+	Crypto     CryptoConfig     `mapstructure:"crypto"`
+	Security   SecurityConfig   `mapstructure:"security"`
+	Scheduler  SchedulerConfig  `mapstructure:"scheduler"`
+	Upstream   UpstreamConfig   `mapstructure:"upstream"`
+	EPay       EPayConfig       `mapstructure:"epay"`
+	Backup     BackupConfig     `mapstructure:"backup"`
 	ImageCache ImageCacheConfig `mapstructure:"image_cache"`
-	SMTP      SMTPConfig      `mapstructure:"smtp"`
+	SMTP       SMTPConfig       `mapstructure:"smtp"`
 }
 
 type AppConfig struct {
@@ -76,19 +76,19 @@ type SchedulerConfig struct {
 }
 
 type UpstreamConfig struct {
-	BaseURL            string `mapstructure:"base_url"`
-	RequestTimeoutSec  int    `mapstructure:"request_timeout_sec"`
-	SSEReadTimeoutSec  int    `mapstructure:"sse_read_timeout_sec"`
+	BaseURL           string `mapstructure:"base_url"`
+	RequestTimeoutSec int    `mapstructure:"request_timeout_sec"`
+	SSEReadTimeoutSec int    `mapstructure:"sse_read_timeout_sec"`
 }
 
 // BackupConfig 数据库备份配置。
 type BackupConfig struct {
-	Dir           string `mapstructure:"dir"`            // 备份落盘目录,默认 /app/data/backups
-	Retention     int    `mapstructure:"retention"`      // 保留最近 N 个(>0),0 表示不自动清理
-	MysqldumpBin  string `mapstructure:"mysqldump_bin"`  // 默认 mysqldump
-	MysqlBin      string `mapstructure:"mysql_bin"`      // 恢复用,默认 mysql
-	MaxUploadMB   int    `mapstructure:"max_upload_mb"`  // 上传 .sql.gz 上限,默认 512
-	AllowRestore  bool   `mapstructure:"allow_restore"`  // 是否允许 /restore 端点(生产强烈建议 false 手动切)
+	Dir          string `mapstructure:"dir"`           // 备份落盘目录,默认 /app/data/backups
+	Retention    int    `mapstructure:"retention"`     // 保留最近 N 个(>0),0 表示不自动清理
+	MysqldumpBin string `mapstructure:"mysqldump_bin"` // 默认 mysqldump
+	MysqlBin     string `mapstructure:"mysql_bin"`     // 恢复用,默认 mysql
+	MaxUploadMB  int    `mapstructure:"max_upload_mb"` // 上传 .sql.gz 上限,默认 512
+	AllowRestore bool   `mapstructure:"allow_restore"` // 是否允许 /restore 端点(生产强烈建议 false 手动切)
 }
 
 type ImageCacheConfig struct {
@@ -135,6 +135,7 @@ func Load(path string) (*Config, error) {
 		v.SetConfigFile(path)
 		v.SetEnvPrefix("GPT2API")
 		v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+		setDefaults(v)
 		v.AutomaticEnv()
 		if err := v.ReadInConfig(); err != nil {
 			loadErr = fmt.Errorf("read config: %w", err)
@@ -148,6 +149,28 @@ func Load(path string) (*Config, error) {
 		global = &c
 	})
 	return global, loadErr
+}
+
+func setDefaults(v *viper.Viper) {
+	v.SetDefault("app.listen", ":8080")
+	v.SetDefault("app.base_url", "")
+	v.SetDefault("log.level", "info")
+	v.SetDefault("log.format", "console")
+	v.SetDefault("log.output", "stdout")
+
+	v.SetDefault("mysql.max_open_conns", 100)
+	v.SetDefault("mysql.max_idle_conns", 20)
+	v.SetDefault("mysql.conn_max_lifetime_sec", 3600)
+	v.SetDefault("redis.pool_size", 100)
+
+	v.SetDefault("backup.dir", "./data/backups")
+	v.SetDefault("backup.retention", 30)
+	v.SetDefault("backup.mysqldump_bin", "mysqldump")
+	v.SetDefault("backup.mysql_bin", "mysql")
+	v.SetDefault("backup.max_upload_mb", 512)
+	v.SetDefault("backup.allow_restore", false)
+
+	v.SetDefault("image_cache.dir", "./data/image-cache")
 }
 
 // Get 返回全局配置,仅在 Load 之后调用。
