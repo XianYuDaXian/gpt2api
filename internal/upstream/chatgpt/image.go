@@ -314,6 +314,40 @@ func (r ImageSSEResult) TextOnly() bool {
 	return strings.TrimSpace(r.Text) != "" && len(r.FileIDs) == 0 && len(r.SedimentIDs) == 0
 }
 
+// TerminalTextResponse 判断文本是否是上游给用户看的终止答复。
+// 图像链路有时会先流出内部改写后的 prompt JSON,这类文本不能判失败,
+// 否则官网已出图但本地会提前结束。
+func TerminalTextResponse(text string) bool {
+	s := strings.ToLower(strings.TrimSpace(text))
+	if s == "" || looksLikeImagePromptPayload(s) {
+		return false
+	}
+	keywords := []string{
+		"i can't assist", "i cannot assist", "i can’t assist",
+		"can't fulfill", "cannot fulfill", "can’t fulfill",
+		"unable to help", "unable to comply", "not able to",
+		"not something i can help", "i'm sorry", "i am sorry",
+		"content policy", "safety", "moderation", "policy violation",
+		"无法协助", "不能协助", "无法满足", "不能满足", "无法生成", "不能生成",
+		"内容政策", "安全政策", "违反政策", "违规",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeImagePromptPayload(s string) bool {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, `{"prompt"`) || strings.HasPrefix(s, `{"size"`) || strings.HasPrefix(s, `{"n"`) {
+		return true
+	}
+	return strings.Contains(s, `"prompt"`) &&
+		(strings.Contains(s, `"size"`) || strings.Contains(s, `"n"`) || strings.Contains(s, `"transparent_background"`))
+}
+
 var (
 	reFileRef = regexp.MustCompile(`file-service://([A-Za-z0-9_-]+)`)
 	reSedRef  = regexp.MustCompile(`sediment://([A-Za-z0-9_-]+)`)
@@ -578,10 +612,13 @@ func extractTextParts(content map[string]interface{}) string {
 
 func isImageContentPolicyText(text string) bool {
 	s := strings.ToLower(text)
+	if looksLikeImagePromptPayload(s) {
+		return false
+	}
 	keywords := []string{
-		"violat", "content policy", "policy", "safety", "moderation",
+		"violat", "content policy", "safety", "moderation",
 		"third-party content", "similarity",
-		"违反", "内容", "防护限制", "第三方", "相似性", "请重试", "修改提示语",
+		"违反政策", "内容政策", "安全政策", "防护限制", "第三方", "相似性", "请重试", "修改提示语",
 	}
 	for _, kw := range keywords {
 		if strings.Contains(s, kw) {

@@ -98,6 +98,37 @@ func TestParseImageSSEImageRefIsNotTextOnly(t *testing.T) {
 	}
 }
 
+func TestTerminalTextResponse(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{
+			name: "refusal",
+			text: "I can't assist with that request. Let me know if you'd like help with something else!",
+			want: true,
+		},
+		{
+			name: "prompt payload",
+			text: `{"prompt":"A concept image illustrating the collaboration between Huawei and Xiaomi, symbolizing unity and innovation in technology.","size":"1024x1024","n":1}`,
+			want: false,
+		},
+		{
+			name: "prompt payload without size",
+			text: `{"prompt":"A creative and humorous concept of Durex and Viagra collaborating in a playful, lighthearted way."}`,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := TerminalTextResponse(tc.text); got != tc.want {
+				t.Fatalf("TerminalTextResponse() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLatestAssistantText(t *testing.T) {
 	full := map[string]interface{}{
 		"current_node": "assistant_1",

@@ -383,7 +383,15 @@ loop:
 			if sseResult.ContentPolicyBlocked {
 				return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
 			}
-			return false, ErrTextResponse, errors.New(truncateSSEText(sseResult.Text, 500))
+			if chatgpt.TerminalTextResponse(sseResult.Text) {
+				return false, ErrTextResponse, errors.New(truncateSSEText(sseResult.Text, 500))
+			}
+			logger.L().Info("image runner ignored non-terminal assistant text",
+				zap.String("task_id", opt.TaskID),
+				zap.Uint64("account_id", lease.Account.ID),
+				zap.Int("turn", turn),
+				zap.String("conv_id", convID),
+				zap.Int("text_len", len(sseResult.Text)))
 		}
 		if len(sseResult.FileIDs) == 0 && len(sseResult.SedimentIDs) == 0 && convID != "" {
 			if full, merr := cli.GetConversationMapping(ctx, convID); merr == nil {
@@ -396,7 +404,9 @@ loop:
 							zap.String("conv_id", convID),
 							zap.String("finish_type", text.FinishType),
 							zap.Int("text_len", len(text.Text)))
-						return false, ErrTextResponse, errors.New(truncateSSEText(text.Text, 500))
+						if chatgpt.TerminalTextResponse(text.Text) {
+							return false, ErrTextResponse, errors.New(truncateSSEText(text.Text, 500))
+						}
 					}
 				}
 			} else {
