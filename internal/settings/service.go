@@ -267,6 +267,9 @@ func (s *Service) RetryOnFailure() bool { return s.GetBool(GatewayRetryOnFailure
 func (s *Service) ArchiveImageConversation() bool {
 	return s.GetBool(GatewayArchiveImageConversation)
 }
+func (s *Service) DeleteRejectedImageConversation() bool {
+	return s.GetBool(GatewayDeleteRejectedImageConversation)
+}
 func (s *Service) RetryMax() int {
 	n := int(s.GetInt(GatewayRetryMax))
 	if n < 0 {

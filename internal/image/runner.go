@@ -52,19 +52,20 @@ type ReferenceImage struct {
 
 // RunOptions 是单次生图的输入。
 type RunOptions struct {
-	TaskID              string
-	UserID              uint64
-	KeyID               uint64
-	ModelID             uint64
-	UpstreamModel       string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
-	Prompt              string
-	N                   int              // 目前上游单次返回固定,N 仅用于计费
-	MaxAttempts         int              // 灰度未命中时最大重试,默认 2
-	PerAttemptTimeout   time.Duration    // 单次尝试总超时,默认 5min
-	PollMaxWait         time.Duration    // 轮询最长等待,默认 300s
-	References          []ReferenceImage // 图生图/编辑:参考图
-	AcceptPreview       bool             // 已拿到预览图时立即返回,避免同步请求继续等待 IMG2
-	ArchiveConversation bool             // 成功取到图片后归档上游会话,避免污染官网会话列表
+	TaskID                     string
+	UserID                     uint64
+	KeyID                      uint64
+	ModelID                    uint64
+	UpstreamModel              string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
+	Prompt                     string
+	N                          int              // 目前上游单次返回固定,N 仅用于计费
+	MaxAttempts                int              // 灰度未命中时最大重试,默认 2
+	PerAttemptTimeout          time.Duration    // 单次尝试总超时,默认 5min
+	PollMaxWait                time.Duration    // 轮询最长等待,默认 300s
+	References                 []ReferenceImage // 图生图/编辑:参考图
+	AcceptPreview              bool             // 已拿到预览图时立即返回,避免同步请求继续等待 IMG2
+	ArchiveConversation        bool             // 成功取到图片后归档上游会话,避免污染官网会话列表
+	DeleteRejectedConversation bool             // 被上游明确拒绝时删除上游会话,避免污染官网会话列表
 }
 
 // RunResult 是单次生图的输出。
@@ -381,9 +382,15 @@ loop:
 		)
 		if sseResult.TextOnly() {
 			if sseResult.ContentPolicyBlocked {
+				if opt.DeleteRejectedConversation {
+					deleteRejectedConversation(cli, opt.TaskID, lease.Account.ID, convID)
+				}
 				return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
 			}
 			if chatgpt.TerminalTextResponse(sseResult.Text) {
+				if opt.DeleteRejectedConversation {
+					deleteRejectedConversation(cli, opt.TaskID, lease.Account.ID, convID)
+				}
 				return false, ErrTextResponse, errors.New(truncateSSEText(sseResult.Text, 500))
 			}
 			logger.L().Info("image runner ignored non-terminal assistant text",
@@ -405,6 +412,9 @@ loop:
 							zap.String("finish_type", text.FinishType),
 							zap.Int("text_len", len(text.Text)))
 						if chatgpt.TerminalTextResponse(text.Text) {
+							if opt.DeleteRejectedConversation {
+								deleteRejectedConversation(cli, opt.TaskID, lease.Account.ID, convID)
+							}
 							return false, ErrTextResponse, errors.New(truncateSSEText(text.Text, 500))
 						}
 					}
@@ -415,6 +425,9 @@ loop:
 			}
 		}
 		if sseResult.ContentPolicyBlocked && len(sseResult.FileIDs) == 0 && len(sseResult.SedimentIDs) == 0 {
+			if opt.DeleteRejectedConversation {
+				deleteRejectedConversation(cli, opt.TaskID, lease.Account.ID, convID)
+			}
 			return false, ErrContentPolicy, errors.New(truncateSSEText(sseResult.Text, 240))
 		}
 
@@ -609,6 +622,26 @@ loop:
 	result.SignedURLs = signedURLs
 	result.ContentTypes = contentTypes
 	return true, "", nil
+}
+
+func deleteRejectedConversation(cli *chatgpt.Client, taskID string, accountID uint64, convID string) {
+	if cli == nil || convID == "" {
+		return
+	}
+	delCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := cli.DeleteConversation(delCtx, convID); err != nil {
+		logger.L().Warn("image runner delete rejected conversation failed",
+			zap.String("task_id", taskID),
+			zap.Uint64("account_id", accountID),
+			zap.String("conv_id", convID),
+			zap.Error(err))
+		return
+	}
+	logger.L().Info("image runner deleted rejected conversation",
+		zap.String("task_id", taskID),
+		zap.Uint64("account_id", accountID),
+		zap.String("conv_id", convID))
 }
 
 // buildToolBaseline 从 conversation mapping 里提取所有已存在的 image_gen tool 消息 id,

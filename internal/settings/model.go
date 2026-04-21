@@ -55,15 +55,16 @@ const (
 	KeyMaxPerUser          = "key.max_per_user"
 
 	// 网关与调度
-	GatewayUpstreamTimeoutSec       = "gateway.upstream_timeout_sec"
-	GatewaySSEReadTimeoutSec        = "gateway.sse_read_timeout_sec"
-	GatewayCooldown429Sec           = "gateway.cooldown_429_sec"
-	GatewayWarnedPauseHours         = "gateway.warned_pause_hours"
-	GatewayDailyUsageRatio          = "gateway.daily_usage_ratio"
-	GatewayRetryOnFailure           = "gateway.retry_on_failure"
-	GatewayRetryMax                 = "gateway.retry_max"
-	GatewayDispatchQueueWaitSec     = "gateway.dispatch_queue_wait_sec"
-	GatewayArchiveImageConversation = "gateway.archive_image_conversation"
+	GatewayUpstreamTimeoutSec              = "gateway.upstream_timeout_sec"
+	GatewaySSEReadTimeoutSec               = "gateway.sse_read_timeout_sec"
+	GatewayCooldown429Sec                  = "gateway.cooldown_429_sec"
+	GatewayWarnedPauseHours                = "gateway.warned_pause_hours"
+	GatewayDailyUsageRatio                 = "gateway.daily_usage_ratio"
+	GatewayRetryOnFailure                  = "gateway.retry_on_failure"
+	GatewayRetryMax                        = "gateway.retry_max"
+	GatewayDispatchQueueWaitSec            = "gateway.dispatch_queue_wait_sec"
+	GatewayArchiveImageConversation        = "gateway.archive_image_conversation"
+	GatewayDeleteRejectedImageConversation = "gateway.delete_rejected_image_conversation"
 
 	// 代理管理(健康探测)
 	ProxyProbeEnabled     = "proxy.probe_enabled"
@@ -135,6 +136,7 @@ var Defs = []KeyDef{
 	{Key: GatewayRetryMax, Type: "int", Category: "gateway", Default: "1", Label: "最大重试次数", Desc: "0~3"},
 	{Key: GatewayDispatchQueueWaitSec, Type: "int", Category: "gateway", Default: "120", Label: "账号排队等待上限(秒)", Desc: "并发大于账号数时,请求会在队列里等空闲账号;超过此秒数仍拿不到才返回 no_available_account。0=不排队,立即失败"},
 	{Key: GatewayArchiveImageConversation, Type: "bool", Category: "gateway", Default: "false", Label: "生图后归档上游会话", Desc: "图片结果可下载后自动把 chatgpt.com 对话设为归档,避免污染官网会话列表"},
+	{Key: GatewayDeleteRejectedImageConversation, Type: "bool", Category: "gateway", Default: "false", Label: "拒绝后删除上游会话", Desc: "图片请求被上游明确拒绝时,自动删除 chatgpt.com 会话,避免污染官网会话列表"},
 
 	// ---------- 代理管理(健康探测) ----------
 	{Key: ProxyProbeEnabled, Type: "bool", Category: "gateway", Default: "true", Label: "代理探测开关", Desc: "开启后后台定时对启用的代理做连通性探测,更新健康分"},

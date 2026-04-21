@@ -776,6 +776,31 @@ func (c *Client) ArchiveConversation(ctx context.Context, convID string) error {
 	return nil
 }
 
+// DeleteConversation 对齐官网删除聊天:DELETE /backend-api/conversation/id/{conversation_id}。
+func (c *Client) DeleteConversation(ctx context.Context, convID string) error {
+	if convID == "" {
+		return fmt.Errorf("conv_id required")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.opts.BaseURL+"/backend-api/conversation/id/"+url.PathEscape(convID), nil)
+	if err != nil {
+		return err
+	}
+	c.commonHeaders(req)
+	req.Header.Set("Accept", "*/*")
+
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	buf, _ := io.ReadAll(res.Body)
+	if res.StatusCode >= 400 {
+		return &UpstreamError{Status: res.StatusCode, Message: "conversation delete failed", Body: string(buf)}
+	}
+	return nil
+}
+
 // ExtractImageToolMsgs 从 conversation.mapping 里提取所有 IMG2 tool 消息。
 func ExtractImageToolMsgs(mapping map[string]interface{}) []ImageToolMsg {
 	out := make([]ImageToolMsg, 0, 4)

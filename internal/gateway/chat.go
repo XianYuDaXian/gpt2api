@@ -55,6 +55,7 @@ type Handler struct {
 		GatewaySSEReadTimeoutSec() int
 		SiteAPIBaseURL() string
 		ArchiveImageConversation() bool
+		DeleteRejectedImageConversation() bool
 	}
 }
 
