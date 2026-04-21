@@ -238,8 +238,9 @@ func (h *ImagesHandler) ImageGenerations(c *gin.Context) {
 
 	// 5) 执行(同步阻塞)
 	//
-	// 单请求硬上限 6 分钟:单个 attempt 5 分钟 + 可能的 preview_only 重试余量。
-	runCtx, cancel := context.WithTimeout(c.Request.Context(), 6*time.Minute)
+	// 生图链路会写入任务表,不能被浏览器刷新/断开直接取消;否则官网已生成,
+	// 本地任务却会被标记为 poll error。这里使用后台上下文,仅保留总超时。
+	runCtx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 
 	// 带参考图时,灰度没什么意义,只留 1 次尝试避免重复上传参考图。
@@ -451,7 +452,7 @@ func (h *ImagesHandler) handleChatAsImage(c *gin.Context, rec *usage.Log, ak *ap
 		})
 	}
 
-	runCtx, cancel := context.WithTimeout(c.Request.Context(), 6*time.Minute)
+	runCtx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 
 	res := h.Runner.Run(runCtx, image.RunOptions{
@@ -778,7 +779,7 @@ func (h *ImagesHandler) ImageEdits(c *gin.Context) {
 		})
 	}
 
-	runCtx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Minute)
+	runCtx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 
 	res := h.Runner.Run(runCtx, image.RunOptions{

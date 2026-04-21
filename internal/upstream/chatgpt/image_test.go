@@ -58,6 +58,31 @@ func TestParseImageSSEPatchTextOnly(t *testing.T) {
 	}
 }
 
+func TestParseImageSSEPatchConversationID(t *testing.T) {
+	stream := make(chan SSEEvent, 3)
+	stream <- SSEEvent{Data: []byte(`{"p":"/conversation_id","o":"add","v":"69e76761-df2c-83ea-a43a-a5eb3ac939cb"}`)}
+	stream <- SSEEvent{Data: []byte(`{"v":[{"p":"/message/content/parts/0","o":"append","v":"hello"}]}`)}
+	stream <- SSEEvent{Data: []byte(`[DONE]`)}
+	close(stream)
+
+	got := ParseImageSSE(stream)
+	if got.ConversationID != "69e76761-df2c-83ea-a43a-a5eb3ac939cb" {
+		t.Fatalf("ConversationID = %q", got.ConversationID)
+	}
+}
+
+func TestParseImageSSEDeepConversationID(t *testing.T) {
+	stream := make(chan SSEEvent, 2)
+	stream <- SSEEvent{Data: []byte(`{"v":{"turn":{"conversationId":"69e76761-df2c-83ea-a43a-a5eb3ac939cb"}}}`)}
+	stream <- SSEEvent{Data: []byte(`[DONE]`)}
+	close(stream)
+
+	got := ParseImageSSE(stream)
+	if got.ConversationID != "69e76761-df2c-83ea-a43a-a5eb3ac939cb" {
+		t.Fatalf("ConversationID = %q", got.ConversationID)
+	}
+}
+
 func TestParseImageSSEImageRefIsNotTextOnly(t *testing.T) {
 	stream := make(chan SSEEvent, 2)
 	stream <- SSEEvent{Data: []byte(`{"v":{"message":{"content":{"parts":["file-service://file_abc"]}}}}`)}

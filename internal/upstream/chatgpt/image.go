@@ -317,6 +317,7 @@ func (r ImageSSEResult) TextOnly() bool {
 var (
 	reFileRef = regexp.MustCompile(`file-service://([A-Za-z0-9_-]+)`)
 	reSedRef  = regexp.MustCompile(`sediment://([A-Za-z0-9_-]+)`)
+	reConvID  = regexp.MustCompile(`"conversation_id"\s*:\s*"([^"]+)"`)
 )
 
 // ParseImageSSE 消费 SSE 事件流,把图像相关的字段提取出来。
@@ -353,10 +354,18 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 				r.SedimentIDs = append(r.SedimentIDs, sid)
 			}
 		}
+		if r.ConversationID == "" {
+			if m := reConvID.FindSubmatch(data); len(m) == 2 {
+				r.ConversationID = string(m[1])
+			}
+		}
 
 		var obj map[string]interface{}
 		if err := json.Unmarshal(data, &obj); err != nil {
 			continue
+		}
+		if r.ConversationID == "" {
+			r.ConversationID = extractConversationID(obj)
 		}
 		if delta := textX.Extract(obj); delta != "" {
 			r.Text += delta
@@ -383,6 +392,41 @@ func ParseImageSSE(stream <-chan SSEEvent) ImageSSEResult {
 		}
 	}
 	return r
+}
+
+func extractConversationID(raw map[string]interface{}) string {
+	if raw == nil {
+		return ""
+	}
+	if p, _ := raw["p"].(string); strings.Contains(p, "conversation_id") || strings.Contains(p, "conversationId") {
+		if v, _ := raw["v"].(string); v != "" {
+			return v
+		}
+	}
+	return findConversationID(raw)
+}
+
+func findConversationID(v interface{}) string {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		for k, vv := range x {
+			if k == "conversation_id" || k == "conversationId" || k == "conversationID" {
+				if s, _ := vv.(string); s != "" {
+					return s
+				}
+			}
+			if s := findConversationID(vv); s != "" {
+				return s
+			}
+		}
+	case []interface{}:
+		for _, vv := range x {
+			if s := findConversationID(vv); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 type imageSSETextExtractor struct {
@@ -828,10 +872,11 @@ func (c *Client) PollConversationForImages(ctx context.Context, convID string, o
 		if err != nil {
 			if ue, ok := err.(*UpstreamError); ok && ue.Status == 429 {
 				consecutive429++
-				if consecutive429 >= 3 {
-					return PollStatusError, nil, nil
+				wait := time.Duration(5+consecutive429*3) * time.Second
+				if wait > 20*time.Second {
+					wait = 20 * time.Second
 				}
-				sleep(ctx, 10*time.Second)
+				sleep(ctx, wait)
 				continue
 			}
 			sleep(ctx, opt.Interval)

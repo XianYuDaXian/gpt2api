@@ -519,6 +519,9 @@ loop:
 			return false, ErrPollTimeout, errors.New("poll timeout")
 
 		default:
+			if err := ctx.Err(); err != nil {
+				return false, ErrPollTimeout, fmt.Errorf("poll canceled: %w", err)
+			}
 			return false, ErrUpstream, errors.New("poll error")
 		}
 	}
