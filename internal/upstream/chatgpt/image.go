@@ -36,7 +36,8 @@ import (
 // ImageConvOpts 是图像会话的入参。
 type ImageConvOpts struct {
 	Prompt         string          // 用户提示词(已处理完的,含可选 CLARITY_SUFFIX)
-	UpstreamModel  string          // 默认 "gpt-5-3"
+	UpstreamModel  string          // 默认由调用方决定,官网图片思考模式为 "gpt-5-4-thinking"
+	ThinkingEffort string          // 图片思考强度,官网当前可见值为 "standard" / "extended"
 	ConvID         string          // 复用会话时填,空则新建
 	ParentMsgID    string          // 复用会话时从 GetConversationHead 取;新会话随机
 	MessageID      string          // 可选,留空自动生成
@@ -98,6 +99,7 @@ func (c *Client) PrepareFConversation(ctx context.Context, opt ImageConvOpts) (s
 	if opt.UpstreamModel == "" {
 		opt.UpstreamModel = "auto"
 	}
+	opt.ThinkingEffort = normalizeImageThinkingEffort(opt.ThinkingEffort)
 	if opt.MessageID == "" {
 		opt.MessageID = uuid.NewString()
 	}
@@ -124,6 +126,11 @@ func (c *Client) PrepareFConversation(ctx context.Context, opt ImageConvOpts) (s
 		"client_contextual_info": map[string]interface{}{
 			"app_name": "chatgpt.com",
 		},
+		"paragen_cot_summary_display_override": "allow",
+		"force_parallel_switch":                "auto",
+	}
+	if opt.ThinkingEffort != "" {
+		payload["thinking_effort"] = opt.ThinkingEffort
 	}
 	// 只有已有会话才带 conversation_id;新会话不带这个 key(对齐浏览器抓包,
 	// 带陌生 UUID 上游会 404)
@@ -170,6 +177,7 @@ func (c *Client) StreamFConversation(ctx context.Context, opt ImageConvOpts) (<-
 	if opt.UpstreamModel == "" {
 		opt.UpstreamModel = "auto"
 	}
+	opt.ThinkingEffort = normalizeImageThinkingEffort(opt.ThinkingEffort)
 	if opt.MessageID == "" {
 		opt.MessageID = uuid.NewString()
 	}
@@ -257,6 +265,9 @@ func (c *Client) StreamFConversation(ctx context.Context, opt ImageConvOpts) (<-
 		"paragen_cot_summary_display_override": "allow",
 		"force_parallel_switch":                "auto",
 	}
+	if opt.ThinkingEffort != "" {
+		payload["thinking_effort"] = opt.ThinkingEffort
+	}
 	// 新会话不带 conversation_id(对齐浏览器抓包);已有会话才带
 	if opt.ConvID != "" {
 		payload["conversation_id"] = opt.ConvID
@@ -297,6 +308,21 @@ func (c *Client) StreamFConversation(ctx context.Context, opt ImageConvOpts) (<-
 	out := make(chan SSEEvent, 64)
 	go parseSSE(res.Body, out, opt.SSETimeout)
 	return out, nil
+}
+
+func normalizeImageThinkingEffort(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "", "off", "none", "false", "0", "disabled":
+		return ""
+	case "standard", "extended":
+		return v
+	case "advanced":
+		return "extended"
+	default:
+		// 官网当前抓包的稳定值是 standard;未知值不透传,避免上游 400。
+		return "standard"
+	}
 }
 
 // ImageSSEResult 是 ParseImageSSE 的扫描结果。

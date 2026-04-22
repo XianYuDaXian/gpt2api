@@ -20,9 +20,13 @@ Content-Type: application/json
 | `model` | string | 是 | 固定使用 `gpt-image-2` |
 | `prompt` | string | 是 | 生图提示词，比例、构图、画幅直接写进提示词 |
 | `n` | number | 否 | 生成张数，建议 `1` |
+| `thinking` | boolean | 否 | 是否使用官网图片思考模式；不传或 `false` 表示普通生成 |
+| `thinking_effort` | string | 否 | 思考强度，仅 `thinking=true` 时生效；`standard`=标准，`extended`=进阶 |
 | `reference_images` | string[] | 否 | 图生图参考图，支持图片 URL、data URL 或 base64 |
 
 不要传 `size`、`width`、`height`、`aspect_ratio` 等字段。比例和画幅统一写入 `prompt`，例如 `16:9 横版电影海报`、`9:16 竖版手机壁纸`、`1:1 方图构图`。
+
+`thinking` 和 `thinking_effort` 都是可选字段。只传 `thinking=true` 且不传 `thinking_effort` 时，默认使用 `standard`。只传 `thinking_effort` 但不传 `thinking=true` 时，不启用思考模式。
 
 ## 文生图示例
 
@@ -35,6 +39,34 @@ curl http://你的服务器:端口/v1/images/generations \
     "prompt": "生成一张 16:9 横版电影海报，未来城市雨夜，霓虹灯，赛博朋克风格，电影级光影，高细节",
     "n": 1
   }'
+```
+
+## 思考模式示例
+
+标准思考：
+
+```bash
+curl http://你的服务器:端口/v1/images/generations \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "生成一张小米和华为旗舰手机联动海报，21:9 横版，未来科技感，电影海报构图",
+    "n": 1,
+    "thinking": true
+  }'
+```
+
+进阶思考：
+
+```json
+{
+  "model": "gpt-image-2",
+  "prompt": "生成一张小米和华为旗舰手机联动海报，21:9 横版，未来科技感，电影海报构图",
+  "n": 1,
+  "thinking": true,
+  "thinking_effort": "extended"
+}
 ```
 
 ## 图生图示例

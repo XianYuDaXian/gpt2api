@@ -69,6 +69,9 @@ type ImageGenRequest struct {
 	Style           string   `json:"style,omitempty"`
 	ResponseFormat  string   `json:"response_format,omitempty"` // url | b64_json(暂仅支持 url)
 	User            string   `json:"user,omitempty"`
+	Thinking        *bool    `json:"thinking,omitempty"`         // 非标准扩展:true=使用官网图片思考模式
+	EnableThinking  *bool    `json:"enable_thinking,omitempty"`  // thinking 的兼容别名
+	ThinkingEffort  string   `json:"thinking_effort,omitempty"`  // standard | extended;仅 thinking=true 时生效
 	ReferenceImages []string `json:"reference_images,omitempty"` // 非标准扩展,见注释
 }
 
@@ -262,6 +265,8 @@ func (h *ImagesHandler) ImageGenerations(c *gin.Context) {
 		AcceptPreview:              true,
 		ArchiveConversation:        h.archiveImageConversationEnabled(),
 		DeleteRejectedConversation: h.deleteRejectedImageConversationEnabled(),
+		ImageThinking:              imageThinkingEnabled(req.Thinking, req.EnableThinking),
+		ImageThinkingEffort:        req.ThinkingEffort,
 	})
 	rec.AccountID = res.AccountID
 
@@ -468,6 +473,8 @@ func (h *ImagesHandler) handleChatAsImage(c *gin.Context, rec *usage.Log, ak *ap
 		AcceptPreview:              true,
 		ArchiveConversation:        h.archiveImageConversationEnabled(),
 		DeleteRejectedConversation: h.deleteRejectedImageConversationEnabled(),
+		ImageThinking:              chatImageThinkingEnabled(req),
+		ImageThinkingEffort:        chatImageThinkingEffort(req),
 	})
 	rec.AccountID = res.AccountID
 
@@ -553,6 +560,39 @@ func (h *ImagesHandler) archiveImageConversationEnabled() bool {
 
 func (h *ImagesHandler) deleteRejectedImageConversationEnabled() bool {
 	return h != nil && h.Settings != nil && h.Settings.DeleteRejectedImageConversation()
+}
+
+func imageThinkingEnabled(primary, alias *bool) bool {
+	if primary != nil {
+		return *primary
+	}
+	if alias != nil {
+		return *alias
+	}
+	return false
+}
+
+func chatImageThinkingEnabled(req *ChatCompletionsRequest) bool {
+	if req == nil {
+		return false
+	}
+	return imageThinkingEnabled(req.Thinking, req.EnableThinking)
+}
+
+func chatImageThinkingEffort(req *ChatCompletionsRequest) string {
+	if req == nil || !chatImageThinkingEnabled(req) {
+		return ""
+	}
+	return req.ThinkingEffort
+}
+
+func formBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // localizeImageErr 把 runner 返回的英文错误码 + 原始 err.Error() 压成一段中文提示,
@@ -801,6 +841,8 @@ func (h *ImagesHandler) ImageEdits(c *gin.Context) {
 		AcceptPreview:              true,
 		ArchiveConversation:        h.archiveImageConversationEnabled(),
 		DeleteRejectedConversation: h.deleteRejectedImageConversationEnabled(),
+		ImageThinking:              formBool(c.Request.FormValue("thinking")) || formBool(c.Request.FormValue("enable_thinking")),
+		ImageThinkingEffort:        c.Request.FormValue("thinking_effort"),
 	})
 	rec.AccountID = res.AccountID
 

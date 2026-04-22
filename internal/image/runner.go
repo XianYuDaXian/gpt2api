@@ -56,7 +56,9 @@ type RunOptions struct {
 	UserID                     uint64
 	KeyID                      uint64
 	ModelID                    uint64
-	UpstreamModel              string // 默认 "auto"(由上游根据 system_hints 挑选图像模型)
+	UpstreamModel              string // 默认 "auto";启用图片思考时默认 "gpt-5-4-thinking"
+	ImageThinking              bool   // true=使用官网图片思考模式
+	ImageThinkingEffort        string // thinking=true 且为空时默认 "standard"
 	Prompt                     string
 	N                          int              // 目前上游单次返回固定,N 仅用于计费
 	MaxAttempts                int              // 灰度未命中时最大重试,默认 2
@@ -96,11 +98,22 @@ func (r *Runner) Run(ctx context.Context, opt RunOptions) *RunResult {
 	if opt.PollMaxWait <= 0 {
 		opt.PollMaxWait = 300 * time.Second
 	}
-	if opt.UpstreamModel == "" {
-		// 对齐浏览器抓包 + 参考实现:图像走 f/conversation 时 model 字段和
-		// 普通 chat 一致用 "auto",通过 system_hints=["picture_v2"] 让上游知道
-		// 这是图像任务。硬写 "gpt-5-3" 在免费/新账号上会直接 404。
-		opt.UpstreamModel = "auto"
+	if opt.ImageThinking {
+		if opt.UpstreamModel == "" || opt.UpstreamModel == "auto" || !strings.Contains(strings.ToLower(opt.UpstreamModel), "thinking") {
+			// 2026-04 官网抓包:图片会话切到 Thinking 后,请求使用
+			// model=gpt-5-4-thinking。
+			opt.UpstreamModel = "gpt-5-4-thinking"
+		}
+		opt.ImageThinkingEffort = normalizeImageThinkingEffort(opt.ImageThinkingEffort)
+		if opt.ImageThinkingEffort == "" {
+			opt.ImageThinkingEffort = "standard"
+		}
+	} else {
+		if opt.UpstreamModel == "" {
+			// 未显式启用思考时走普通图片模式,只靠 picture_v2 路由。
+			opt.UpstreamModel = "auto"
+		}
+		opt.ImageThinkingEffort = ""
 	}
 	if opt.N <= 0 {
 		opt.N = 1
@@ -267,15 +280,11 @@ func (r *Runner) runOnce(ctx context.Context, opt RunOptions, result *RunResult)
 	parentID := uuid.NewString()
 	messageID := uuid.NewString()
 
-	// 统一把 model 强制为 "auto":对齐参考实现(只通过 system_hints=["picture_v2"]
-	// 区分图像任务),避免 chatgpt-freeaccount / chatgpt-paid 之间的 model slug 差异。
-	upstreamModel := "auto"
-	if opt.UpstreamModel != "" && opt.UpstreamModel != "auto" && !cr.IsFreeAccount() {
-		// 付费账号如果明确传了 upstream slug 且不是 auto,可以尊重用户传入
-		// (但我们现有模型库没有 image 专用 slug,保留扩展点)
-		upstreamModel = opt.UpstreamModel
-	} else if cr.IsFreeAccount() && opt.UpstreamModel != "" && opt.UpstreamModel != "auto" {
-		logger.L().Warn("image: free account requesting premium model, downgrade to auto",
+	upstreamModel := opt.UpstreamModel
+	if opt.ImageThinking && cr.IsFreeAccount() && opt.UpstreamModel != "" && opt.UpstreamModel != "auto" {
+		// 免费账号通常没有 Thinking 图片模型权限,降级给上游自动选择,避免直接 404。
+		upstreamModel = "auto"
+		logger.L().Warn("image: free account requesting thinking image model, downgrade to auto",
 			zap.Uint64("account_id", lease.Account.ID),
 			zap.String("requested_model", opt.UpstreamModel))
 	}
@@ -327,14 +336,15 @@ loop:
 		}
 
 		convOpt := chatgpt.ImageConvOpts{
-			Prompt:        opt.Prompt,
-			UpstreamModel: upstreamModel,
-			ConvID:        convID, // 第 1 轮空串=新会话,后续轮复用
-			ParentMsgID:   parentID,
-			MessageID:     messageID,
-			ChatToken:     cr.Token,
-			ProofToken:    proofToken,
-			References:    refs,
+			Prompt:         opt.Prompt,
+			UpstreamModel:  upstreamModel,
+			ConvID:         convID, // 第 1 轮空串=新会话,后续轮复用
+			ParentMsgID:    parentID,
+			MessageID:      messageID,
+			ChatToken:      cr.Token,
+			ProofToken:     proofToken,
+			References:     refs,
+			ThinkingEffort: opt.ImageThinkingEffort,
 		}
 		if turn > 1 {
 			// 续聊:每轮用新的 message_id,parent 来自上轮会话头
@@ -704,6 +714,20 @@ func truncateSSEText(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+func normalizeImageThinkingEffort(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "", "off", "none", "false", "0", "disabled":
+		return ""
+	case "standard", "extended":
+		return v
+	case "advanced":
+		return "extended"
+	default:
+		return "standard"
+	}
 }
 
 // GenerateTaskID 生成对外 task_id。
